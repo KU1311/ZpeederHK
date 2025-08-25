@@ -35,7 +35,7 @@ function checkSpeedCameras(position) {
 
     if (distance <= 200 && headingDifference <= 45) {
       self.registration.showNotification('Speed Camera Alert', {
-        body: `Speed camera ahead in 200 meters on this road!`,
+        body: `Speed camera ahead in 200 meters! ${camera.remarks}`,
         icon: 'https://via.placeholder.com/192', // Replace with your icon
         vibrate: [200, 100, 200],
       });
