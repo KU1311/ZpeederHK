@@ -35,11 +35,15 @@ async function registerServiceWorker() {
 }
 
 async function loadSpeedCameras(retries = 3, delay = 1000) {
+  if (typeof Papa === 'undefined') {
+    console.error('PapaParse is not loaded. Please ensure the PapaParse script is included.');
+    return [];
+  }
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      // Simplified fetch without custom headers to avoid preflight
       const response = await fetch('https://raw.githubusercontent.com/KU1311/ZpeederHK/main/cam2025_all_test1.csv', {
         method: 'GET',
-        headers: { 'Content-Type': 'text/csv' },
         cache: 'no-cache'
       });
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
@@ -50,7 +54,6 @@ async function loadSpeedCameras(retries = 3, delay = 1000) {
         throw new Error('Failed to parse CSV');
       }
       const cameras = parsed.data.map((row, index) => {
-        // Validate required fields
         if (!row.ID || isNaN(row.lat) || isNaN(row.long) || isNaN(row.bearing)) {
           console.warn(`Skipping invalid row ${index + 1}:`, row);
           return null;
