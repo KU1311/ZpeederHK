@@ -39,7 +39,7 @@ async function loadSpeedCameras(retries = 3, delay = 1000) {
     console.error('PapaParse is not loaded. Please ensure the PapaParse script is included.');
     return [];
   }
-  const csvUrl = 'https://raw.githubusercontent.com/KU1311/ZpeederHK/main/cam2025_all_test1.csv';
+  const csvUrl = '/cam2025_all_test1.csv'; // Host on https://ku1311.github.io/cam2025_all_test1.csv
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await fetch(csvUrl)
