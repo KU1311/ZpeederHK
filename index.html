@@ -16,6 +16,16 @@
     <p id="status">Requesting location permission...</p>
   </div>
   <script src="https://unpkg.com/geolib@3.3.4/lib/index.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" integrity="sha512-dfX4+5B6EPu95j21Fe90vI2z5Vq2XF6knYI2K7vDb9lF7nZ8i1mL5cBGIy4Wkg1tS4whYw6vS3oP2mbFeO4RpJlw==" crossorigin="anonymous"></script>
+  <script>
+    if (typeof Papa === 'undefined') {
+      console.error('PapaParse failed to load. Trying fallback CDN...');
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/papaparse@5.4.1/papaparse.min.js';
+      script.onerror = () => console.error('Fallback PapaParse CDN also failed. Please check network or host PapaParse locally.');
+      document.head.appendChild(script);
+    }
+  </script>
   <script src="main.js"></script>
 </body>
 </html>
