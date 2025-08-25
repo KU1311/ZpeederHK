@@ -36,7 +36,8 @@ async function registerServiceWorker() {
 
 async function loadSpeedCameras() {
   try {
-    const response = await fetch('cam2025_all_test1.csv');
+    const response = await fetch('https://raw.githubusercontent.com/KU1311/ZpeederHK/main/cam2025_all_test1.csv');
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const csvText = await response.text();
     return Papa.parse(csvText, { header: true, skipEmptyLines: true }).data.map(row => ({
       id: row.ID,
