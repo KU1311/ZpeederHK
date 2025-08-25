@@ -1,9 +1,3 @@
-const speedCameras = [
-  { id: 1, x: 114.158, y: 22.282, roadDirection: 90 }, // Eastbound
-  { id: 2, x: 114.160, y: 22.285, roadDirection: 180 }, // Southbound
-  // Add more camera locations as needed
-];
-
 async function requestPermissions() {
   try {
     const permission = await navigator.permissions.query({ name: 'geolocation' });
@@ -40,6 +34,23 @@ async function registerServiceWorker() {
   }
 }
 
+async function loadSpeedCameras() {
+  try {
+    const response = await fetch('cam2025_all_test1.csv');
+    const csvText = await response.text();
+    return Papa.parse(csvText, { header: true, skipEmptyLines: true }).data.map(row => ({
+      id: row.ID,
+      y: parseFloat(row.lat),
+      x: parseFloat(row.long),
+      roadDirection: parseFloat(row.bearing),
+      remarks: row.SITE_DES_1 || 'No description'
+    }));
+  } catch (err) {
+    console.error('Error loading CSV:', err);
+    return [];
+  }
+}
+
 async function startLocationMonitoring() {
   const hasPermission = await requestPermissions();
   if (!hasPermission) {
@@ -53,7 +64,14 @@ async function startLocationMonitoring() {
 
   await registerServiceWorker();
 
-  // Initial location for UI
+  // Load speed camera data
+  const speedCameras = await loadSpeedCameras();
+  if (speedCameras.length === 0) {
+    document.getElementById('status').textContent = 'Error loading speed camera data.';
+    return;
+  }
+
+  // Update UI with location
   navigator.geolocation.watchPosition(
     position => {
       const { latitude, longitude, heading } = position.coords;
