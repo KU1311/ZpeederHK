@@ -39,39 +39,41 @@ async function loadSpeedCameras(retries = 3, delay = 1000) {
     console.error('PapaParse is not loaded. Please ensure the PapaParse script is included.');
     return [];
   }
+  const csvUrl = 'https://raw.githubusercontent.com/KU1311/ZpeederHK/main/cam2025_all_test1.csv';
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      // Simplified fetch without custom headers to avoid preflight
-      const response = await fetch('https://raw.githubusercontent.com/KU1311/ZpeederHK/main/cam2025_all_test1.csv', {
-        method: 'GET',
-        cache: 'no-cache'
-      });
-      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-      const csvText = await response.text();
-      const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true, dynamicTyping: true });
-      if (parsed.errors.length > 0) {
-        console.error('CSV parsing errors:', parsed.errors);
-        throw new Error('Failed to parse CSV');
-      }
-      const cameras = parsed.data.map((row, index) => {
-        if (!row.ID || isNaN(row.lat) || isNaN(row.long) || isNaN(row.bearing)) {
-          console.warn(`Skipping invalid row ${index + 1}:`, row);
-          return null;
-        }
-        return {
-          id: row.ID,
-          y: parseFloat(row.lat),
-          x: parseFloat(row.long),
-          roadDirection: parseFloat(row.bearing),
-          remarks: row.SITE_DES_1 || 'No description'
-        };
-      }).filter(row => row !== null);
-      if (cameras.length === 0) {
-        console.error('No valid camera data after parsing. Check CSV content.');
-        throw new Error('No valid camera data');
-      }
-      console.log(`Loaded ${cameras.length} cameras successfully`);
-      return cameras;
+      const response = await fetch(csvUrl)
+        .then(response => {
+          if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+          return response.text();
+        })
+        .then(csvText => {
+          const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true, dynamicTyping: true });
+          if (parsed.errors.length > 0) {
+            console.error('CSV parsing errors:', parsed.errors);
+            throw new Error('Failed to parse CSV');
+          }
+          const cameras = parsed.data.map((row, index) => {
+            if (!row.ID || isNaN(row.lat) || isNaN(row.long) || isNaN(row.bearing)) {
+              console.warn(`Skipping invalid row ${index + 1}:`, row);
+              return null;
+            }
+            return {
+              id: row.ID,
+              y: parseFloat(row.lat),
+              x: parseFloat(row.long),
+              roadDirection: parseFloat(row.bearing),
+              remarks: row.SITE_DES_1 || 'No description'
+            };
+          }).filter(row => row !== null);
+          if (cameras.length === 0) {
+            console.error('No valid camera data after parsing. Check CSV content.');
+            throw new Error('No valid camera data');
+          }
+          console.log(`Loaded ${cameras.length} cameras successfully`);
+          return cameras;
+        });
+      return response;
     } catch (err) {
       console.error(`Attempt ${attempt} failed:`, err.message);
       if (attempt < retries) {
