@@ -39,7 +39,7 @@ async function loadSpeedCameras(retries = 3, delay = 1000) {
     console.error('PapaParse is not loaded. Please ensure the PapaParse script is included.');
     return [];
   }
-  const csvUrl = 'https://cors-anywhere.herokuapp.com/https://raw.githubusercontent.com/KU1311/ZpeederHK/main/cam2025_all_test1.csv';
+  const csvUrl = 'https://raw.githubusercontent.com/KU1311/ZpeederHK/main/cam2025_all_test1.csv';
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await fetch(csvUrl)
@@ -54,7 +54,7 @@ async function loadSpeedCameras(retries = 3, delay = 1000) {
             throw new Error('Failed to parse CSV');
           }
           const cameras = parsed.data.map((row, index) => {
-            if (!row.ID || isNaN(row.lat) || isNaN(row.long) || isNaN(row.bearing) || isNaN(row.SPEED)) {
+            if (!row.ID || isNaN(row.lat) || isNaN(row.long) || isNaN(row.bearing)) {
               console.warn(`Skipping invalid row ${index + 1}:`, row);
               return null;
             }
@@ -63,8 +63,7 @@ async function loadSpeedCameras(retries = 3, delay = 1000) {
               y: parseFloat(row.lat),
               x: parseFloat(row.long),
               roadDirection: parseFloat(row.bearing),
-              remarks: row.SITE_DES_1 || 'No description',
-              speedLimit: parseFloat(row.SPEED)
+              remarks: row.SITE_DES_1 || 'No description'
             };
           }).filter(row => row !== null);
           if (cameras.length === 0) {
