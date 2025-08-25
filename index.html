@@ -1,10 +1,21 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>My GitHub Page</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Speed Camera Alert</title>
+  <style>
+    body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+    #container { text-align: center; }
+    #status { margin-top: 20px; }
+  </style>
 </head>
 <body>
-    <h1>Welcome to My GitHub Page!</h1>
-    <p>This is my first GitHub Pages site.</p>
+  <div id="container">
+    <h1>Speed Camera Alert</h1>
+    <p id="status">Requesting location permission...</p>
+  </div>
+  <script src="https://unpkg.com/geolib@3.3.4/lib/index.js"></script>
+  <script src="main.js"></script>
 </body>
 </html>
