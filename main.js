@@ -100,6 +100,12 @@ async function startLocationMonitoring() {
 
   await registerServiceWorker();
 
+  // Initialize map
+  const map = L.map('map').setView([22.3193, 114.1694], 11); // Default to Hong Kong
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
   // Load speed camera data
   const speedCameras = await loadSpeedCameras();
   if (speedCameras.length === 0) {
@@ -107,12 +113,34 @@ async function startLocationMonitoring() {
     return;
   }
 
-  // Update UI with location
+  // Add camera markers
+  speedCameras.forEach(camera => {
+    L.marker([camera.y, camera.x])
+      .addTo(map)
+      .bindPopup(`Camera ${camera.id}: ${camera.remarks}<br>Speed Limit: ${camera.speedLimit} km/h`);
+  });
+
+  // User location marker
+  let userMarker = null;
+
+  // Update UI with location and speed
   navigator.geolocation.watchPosition(
     position => {
-      const { latitude, longitude, heading } = position.coords;
+      const { latitude, longitude, heading, speed } = position.coords;
+      const speedKmh = speed ? (speed * 3.6).toFixed(1) : 'N/A'; // Convert m/s to km/h
       document.getElementById('status').textContent = 
-        `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}, Heading: ${heading ? heading.toFixed(0) : 'N/A'}°`;
+        `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}, Heading: ${heading ? heading.toFixed(0) : 'N/A'}°, Speed: ${speedKmh} km/h`;
+
+      // Update user marker
+      if (userMarker) {
+        userMarker.setLatLng([latitude, longitude]);
+      } else {
+        userMarker = L.circleMarker([latitude, longitude], {
+          color: 'blue',
+          radius: 8
+        }).addTo(map).bindPopup('Your Location');
+      }
+      map.panTo([latitude, longitude]);
     },
     error => {
       document.getElementById('status').textContent = 'Error fetching location: ' + error.message;
