@@ -4,19 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Speed Camera Alert</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
   <style>
-    body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-    #container { text-align: center; }
-    #status { margin-top: 20px; }
+    body { font-family: Arial, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+    #top-bar { background: #333; color: white; padding: 10px; text-align: center; }
+    #top-bar h1 { margin: 0; font-size: 1.5em; }
+    #status { margin: 10px 0; font-size: 1em; }
+    #map { flex: 1; min-height: 0; }
   </style>
 </head>
 <body>
-  <div id="container">
+  <div id="top-bar">
     <h1>Speed Camera Alert</h1>
     <p id="status">Requesting location permission...</p>
   </div>
+  <div id="map"></div>
   <script src="https://unpkg.com/geolib@3.3.4/lib/index.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" integrity="sha512-s/jZ2+tyro3FS2NIl2FDjK8l3+/uV1d+9vwe/FVRl3H+6z1Mk1fW3pD2Wz4q+ulQvW+VUNt4qTKr+B3rO418DAg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
   <script>
     if (typeof Papa === 'undefined') {
       console.error('PapaParse failed to load. Trying fallback CDN...');
