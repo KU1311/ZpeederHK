@@ -100,10 +100,13 @@ async function startLocationMonitoring() {
 
   await registerServiceWorker();
 
-  // Initialize map
-  const map = L.map('map').setView([22.3193, 114.1694], 11); // Default to Hong Kong
+  // Initialize map with default coordinates (fallback)
+  const defaultCoords = [22.305451, 114.169656];
+  const defaultZoom = 15; // ~500m view
+  const map = L.map('map').setView(defaultCoords, defaultZoom);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    opacity: 0.7
   }).addTo(map);
 
   // Load speed camera data
@@ -132,15 +135,24 @@ async function startLocationMonitoring() {
         `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}, Heading: ${heading ? heading.toFixed(0) : 'N/A'}°, Speed: ${speedKmh} km/h`;
 
       // Update user marker
+      const userCoords = [latitude, longitude];
+      const userZoom = 15; // ~500m view
       if (userMarker) {
-        userMarker.setLatLng([latitude, longitude]);
+        userMarker.setLatLng(userCoords);
+        if (heading) {
+          userMarker.setRotationAngle(heading);
+        }
       } else {
-        userMarker = L.circleMarker([latitude, longitude], {
-          color: 'blue',
-          radius: 8
-        }).addTo(map).bindPopup('Your Location');
+        const userLocationMarker = L.divIcon({
+          className: 'current-location-marker',
+          iconSize: [50, 50]
+        });
+        userMarker = L.marker(userCoords, {
+          icon: userLocationMarker,
+          rotationAngle: heading || 0
+        }).addTo(map).bindPopup(`<div class="current-location-label">你的位置</div>`);
       }
-      map.panTo([latitude, longitude]);
+      map.setView(userCoords, userZoom);
     },
     error => {
       document.getElementById('status').textContent = 'Error fetching location: ' + error.message;
