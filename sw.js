@@ -14,6 +14,8 @@ self.addEventListener('activate', event => {
   event.waitUntil(self.clients.claim());
 });
 
+let lastNotified = {};
+
 function checkSpeedCameras(position) {
   const { latitude, longitude, heading } = position.coords;
   if (!heading) return; // Skip if heading is unavailable
@@ -33,12 +35,13 @@ function checkSpeedCameras(position) {
       ((bearingToCamera - heading + 360) % 360) - ((camera.roadDirection - heading + 360) % 360)
     );
 
-    if (distance <= 200 && headingDifference <= 45) {
+    if (distance <= 200 && headingDifference <= 45 && (!lastNotified[camera.id] || Date.now() - lastNotified[camera.id] > 30000)) {
       self.registration.showNotification('Speed Camera Alert', {
-        body: `Speed camera ahead in 200 meters! Limit: ${camera.speedLimit} km/h. ${camera.remarks}`,
-        icon: 'https://via.placeholder.com/192', // Replace with your icon
+        body: `Speed camera ahead in ${Math.round(distance)} meters! Limit: ${camera.speedLimit} km/h. ${camera.remarks}`,
+        icon: '/icon.png', // Replace with your custom icon
         vibrate: [200, 100, 200],
       });
+      lastNotified[camera.id] = Date.now();
     }
   });
 }
