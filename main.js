@@ -134,6 +134,33 @@ async function startLocationMonitoring() {
       document.getElementById('status').textContent = 
         `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}, Heading: ${heading ? heading.toFixed(0) : 'N/A'}°, Speed: ${speedKmh} km/h`;
 
+      // Find nearest upcoming camera
+      let nearestCamera = null;
+      let minDistance = Infinity;
+      speedCameras.forEach(camera => {
+        const dist = getDistance(
+          { latitude, longitude },
+          { latitude: camera.y, longitude: camera.x }
+        );
+        const bearingToCamera = getRhumbLineBearing(
+          { latitude, longitude },
+          { latitude: camera.y, longitude: camera.x }
+        );
+        const headingDifference = Math.abs(
+          ((bearingToCamera - heading + 360) % 360) - ((camera.roadDirection - heading + 360) % 360)
+        );
+        if (dist <= 200 && headingDifference <= 45 && dist < minDistance) {
+          minDistance = dist;
+          nearestCamera = camera;
+        }
+      });
+
+      if (nearestCamera) {
+        document.getElementById('alert-text').textContent = `Nearest camera ahead in ${Math.round(minDistance)} meters! Limit: ${nearestCamera.speedLimit} km/h. ${nearestCamera.remarks}`;
+      } else {
+        document.getElementById('alert-text').textContent = 'No camera alert';
+      }
+
       // Update user marker
       const userCoords = [latitude, longitude];
       const userZoom = 15; // ~500m view
