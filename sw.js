@@ -18,15 +18,17 @@ let lastNotified = {};
 
 function checkSpeedCameras(position) {
   const { latitude, longitude, heading } = position.coords;
-  if (!heading) return; // Skip if heading is unavailable
+  if (!heading) return;
 
   speedCameras.forEach(camera => {
-    const distance = getDistance(
+    // Use geolib.getDistance
+    const distance = geolib.getDistance(
       { latitude, longitude },
       { latitude: camera.y, longitude: camera.x }
     );
 
-    const bearingToCamera = getRhumbLineBearing(
+    // Use geolib.getRhumbLineBearing
+    const bearingToCamera = geolib.getRhumbLineBearing(
       { latitude, longitude },
       { latitude: camera.y, longitude: camera.x }
     );
@@ -38,7 +40,7 @@ function checkSpeedCameras(position) {
     if (distance <= 200 && headingDifference <= 45 && (!lastNotified[camera.id] || Date.now() - lastNotified[camera.id] > 30000)) {
       self.registration.showNotification('Speed Camera Alert', {
         body: `Speed camera ahead in ${Math.round(distance)} meters! Limit: ${camera.speedLimit} km/h. ${camera.remarks}`,
-        icon: '/icon.png', // Replace with your custom icon
+        icon: '/icon.png',
         vibrate: [200, 100, 200],
       });
       lastNotified[camera.id] = Date.now();
