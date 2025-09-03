@@ -123,8 +123,14 @@ async function startLocationMonitoring() {
       .bindPopup(`Camera ${camera.id}: ${camera.remarks}<br>Speed Limit: ${camera.speedLimit} km/h`);
   });
 
-  // User location marker
+  // User location marker - using a standard Leaflet marker with custom icon
   let userMarker = null;
+  const userIcon = L.divIcon({
+    className: 'current-location-marker',
+    html: '<div style="width: 20px; height: 20px; background: blue; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>',
+    iconSize: [20, 20],
+    iconAnchor: [10, 10]
+  });
 
   // Update UI with location and speed
   navigator.geolocation.watchPosition(
@@ -163,23 +169,19 @@ async function startLocationMonitoring() {
 
       // Update user marker
       const userCoords = [latitude, longitude];
-      const userZoom = 15; // ~500m view
+      
       if (userMarker) {
         userMarker.setLatLng(userCoords);
-        if (heading) {
-          userMarker.setRotationAngle(heading);
-        }
+        // Remove rotation for simplicity - the custom CSS approach wasn't working
       } else {
-        const userLocationMarker = L.divIcon({
-          className: 'current-location-marker',
-          iconSize: [50, 50]
-        });
         userMarker = L.marker(userCoords, {
-          icon: userLocationMarker,
-          rotationAngle: heading || 0
-        }).addTo(map).bindPopup(`<div class="current-location-label">你的位置</div>`);
+          icon: userIcon,
+          zIndexOffset: 1000 // Make sure user marker appears on top
+        }).addTo(map).bindPopup(`<div class="current-location-label">Your Location</div>`);
       }
-      map.setView(userCoords, userZoom);
+      
+      // Center map on user location
+      map.setView(userCoords, 15);
     },
     error => {
       document.getElementById('status').textContent = 'Error fetching location: ' + error.message;
@@ -192,5 +194,6 @@ async function startLocationMonitoring() {
     registration.active.postMessage({ type: 'SET_CAMERAS', cameras: speedCameras });
   });
 }
+
 
 startLocationMonitoring();
