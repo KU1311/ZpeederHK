@@ -160,74 +160,109 @@ async function startLocationMonitoring() {
 
   // Update UI with location and speed
   navigator.geolocation.watchPosition(
-    position => {
-      const { latitude, longitude, heading, speed } = position.coords;
-      const speedKmh = speed ? (speed * 3.6).toFixed(1) : 'N/A';
-      document.getElementById('status').textContent = 
-        `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}, Heading: ${heading ? heading.toFixed(0) : 'N/A'}°, Speed: ${speedKmh} km/h`;
+  position => {
+    const { latitude, longitude, heading, speed } = position.coords;
+    const speedKmh = speed ? (speed * 3.6).toFixed(1) : 'N/A';
+    document.getElementById('status').textContent = 
+      `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}, Heading: ${heading ? heading.toFixed(0) : 'N/A'}°, Speed: ${speedKmh} km/h`;
 
-      // Find nearest upcoming camera using geolib functions
-      let nearestCamera = null;
-      let minDistance = Infinity;
+    // Find nearest upcoming camera (200m same bearing alert)
+    let alertCamera = null;
+    let alertDistance = Infinity;
+    
+    // Find nearest camera regardless of direction (for error checking)
+    let nearestCamera = null;
+    let minDistance = Infinity;
+    
+    speedCameras.forEach(camera => {
+      const dist = geolib.getDistance(
+        { latitude, longitude },
+        { latitude: camera.y, longitude: camera.x }
+      );
       
+      // For nearest camera (any direction)
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearestCamera = camera;
+      }
+      
+      // For alert camera (200m same bearing)
       if (heading) {
-        speedCameras.forEach(camera => {
-          const dist = geolib.getDistance(
-            { latitude, longitude },
-            { latitude: camera.y, longitude: camera.x }
-          );
-          
-          const bearingToCamera = geolib.getRhumbLineBearing(
-            { latitude, longitude },
-            { latitude: camera.y, longitude: camera.x }
-          );
-          
-          const headingDifference = Math.abs(
-            ((bearingToCamera - heading + 360) % 360) - ((camera.roadDirection - heading + 360) % 360)
-          );
-          
-          if (dist <= 200 && headingDifference <= 45 && dist < minDistance) {
-            minDistance = dist;
-            nearestCamera = camera;
-          }
-        });
-      }
-
-      if (nearestCamera) {
-        document.getElementById('alert-text').textContent = `Nearest camera ahead in ${Math.round(minDistance)} meters! Limit: ${nearestCamera.speedLimit} km/h. ${nearestCamera.remarks}`;
-      } else {
-        document.getElementById('alert-text').textContent = 'No camera alert';
-      }
-
-      // Update user marker
-      const userCoords = [latitude, longitude];
-      const currentHeading = heading || 0;
-      
-      if (userMarker) {
-        userMarker.setLatLng(userCoords);
-        // Update the icon with new rotation
-        userMarker.setIcon(createUserIcon(currentHeading));
-      } else {
-        userMarker = L.marker(userCoords, {
-          icon: createUserIcon(currentHeading),
-          zIndexOffset: 1000
-        }).addTo(map).bindPopup(`<div class="current-location-label">Your Location</div>`);
+        const bearingToCamera = geolib.getRhumbLineBearing(
+          { latitude, longitude },
+          { latitude: camera.y, longitude: camera.x }
+        );
         
-        // Center map on user location when first getting position
-        map.setView(userCoords, 16);
+        const headingDifference = Math.abs(
+          ((bearingToCamera - heading + 360) % 360) - ((camera.roadDirection - heading + 360) % 360)
+        );
+        
+        if (dist <= 200 && headingDifference <= 45 && dist < alertDistance) {
+          alertDistance = dist;
+          alertCamera = camera;
+        }
       }
-    },
-    error => {
-      document.getElementById('status').textContent = 'Error fetching location: ' + error.message;
-    },
-    { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
-  );
+    });
 
-  // Send speed camera data to Service Worker
-  navigator.serviceWorker.ready.then(registration => {
-    registration.active.postMessage({ type: 'SET_CAMERAS', cameras: speedCameras });
-  });
-}
+    // Display alert for upcoming camera
+    if (alertCamera) {
+      document.getElementById('alert-text').textContent = 
+        `ALERT: Camera ahead in ${Math.round(alertDistance)}m! Limit: ${alertCamera.speedLimit} km/h. ${alertCamera.remarks}`;
+    } else {
+      document.getElementById('alert-text').textContent = 'No camera alert';
+    }
+    
+    // Display nearest camera info for debugging (in console or status)
+    if (nearestCamera) {
+      console.log(`Nearest camera: ${Math.round(minDistance)}m - ${nearestCamera.remarks} (Limit: ${nearestCamera.speedLimit} km/h)`);
+      // Optional: You could add this to the status display too
+      // document.getElementById('status').textContent += ` | Nearest: ${Math.round(minDistance)}m`;
+    }
+
+    // Update user marker (simplified - no extra triangle)
+    const userCoords = [latitude, longitude];
+    const currentHeading = heading || 0;
+    
+    if (userMarker) {
+      userMarker.setLatLng(userCoords);
+      // Update the icon with new rotation
+      userMarker.setIcon(createUserIcon(currentHeading));
+    } else {
+      // Create a simple blue circle without the inner triangle
+      const createUserIcon = (heading) => {
+        return L.divIcon({
+          className: 'current-location-marker',
+          html: `
+            <div style="
+              width: 20px;
+              height: 20px;
+              background: blue;
+              border-radius: 50%;
+              border: 3px solid white;
+              box-shadow: 0 0 10px rgba(0,0,0,0.5);
+              transform: rotate(${heading}deg);
+            "></div>
+          `,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+      };
+      
+      userMarker = L.marker(userCoords, {
+        icon: createUserIcon(currentHeading),
+        zIndexOffset: 1000
+      }).addTo(map).bindPopup(`<div class="current-location-label">Your Location</div>`);
+      
+      // Center map on user location when first getting position
+      map.setView(userCoords, 16);
+    }
+  },
+  error => {
+    document.getElementById('status').textContent = 'Error fetching location: ' + error.message;
+  },
+  { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+);
+
 
 
 startLocationMonitoring();
