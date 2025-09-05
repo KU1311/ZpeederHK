@@ -261,12 +261,12 @@ async function startLocationMonitoring() {
     document.getElementById('status').textContent = 'Error fetching location: ' + error.message;
   },
   { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
-);
-// Send speed camera data to Service Worker
-  navigator.serviceWorker.ready.then(registration => {
-    registration.active.postMessage({ type: 'SET_CAMERAS', cameras: speedCameras });
-  });
-}
+  );
+  // Send speed camera data to Service Worker
+    navigator.serviceWorker.ready.then(registration => {
+      registration.active.postMessage({ type: 'SET_CAMERAS', cameras: speedCameras });
+    });
+  }
 
 
 startLocationMonitoring();
