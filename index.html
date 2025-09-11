@@ -1,60 +1,157 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Speed Camera Alert</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==" crossorigin="anonymous">
-  <style>
-    body { font-family: Arial, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; }
-    #top-bar { background: #333; color: white; padding: 10px; text-align: center; }
-    #top-bar h1 { margin: 0; font-size: 1.5em; }
-    #status { margin: 10px 0; font-size: 1em; }
-    #alert-text { margin: 10px 0; font-size: 1em; color: yellow; }
-    #map { flex: 1; min-height: 0; }
-    .current-location-marker {
-      background: transparent;
-      width: 50px;
-      height: 50px;
-    }
-    .current-location-marker::before {
-      content: '';
-      display: block;
-      width: 0;
-      height: 0;
-      border-left: 15px solid transparent;
-      border-right: 15px solid transparent;
-      border-bottom: 30px solid blue;
-      position: absolute;
-      top: 10px;
-      left: 10px;
-    }
-    .current-location-label {
-      font-weight: bold;
-      text-align: center;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Testing Pages Navigation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            width: 90%;
+            max-width: 600px;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 2.2rem;
+        }
+        
+        .description {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            font-size: 1.1rem;
+            line-height: 1.5;
+        }
+        
+        .button-container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .nav-button {
+            display: flex;
+            align-items: center;
+            padding: 16px 25px;
+            background: linear-gradient(to right, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 600;
+            text-align: left;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .nav-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .nav-button:active {
+            transform: translateY(0);
+        }
+        
+        .button-icon {
+            margin-right: 15px;
+            font-size: 24px;
+            width: 30px;
+            text-align: center;
+        }
+        
+        .button-text {
+            flex: 1;
+        }
+        
+        .button-badge {
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 4px 10px;
+            font-size: 14px;
+        }
+        
+        .footer {
+            color: #95a5a6;
+            font-size: 0.9rem;
+            margin-top: 20px;
+        }
+        
+        @media (min-width: 768px) {
+            .button-container {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
-  <div id="top-bar">
-    <h1>Speed Camera Alert</h1>
-    <p id="status">Requesting location permission...</p>
-    <p id="alert-text">No camera alert</p>
-  </div>
-  <div id="map"></div>
-  <script src="https://unpkg.com/geolib@3.3.4/lib/index.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" integrity="sha512-s/jZ2+tyro3FS2NIl2FDjK8l3+/uV1d+9vwe/FVRl3H+6z1Mk1fW3pD2Wz4q+ulQvW+VUNt4qTKr+B3rO418DAg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.js"></script>
-  <script>
-    if (typeof Papa === 'undefined') {
-      console.error('PapaParse failed to load. Trying fallback CDN...');
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/papaparse@5.4.1/papaparse.min.js';
-      script.onerror = () => console.error('Fallback PapaParse CDN also failed. Please host PapaParse locally.');
-      document.head.appendChild(script);
-    }
-  </script>
-  <script src="main.js"></script>
+    <div class="container">
+        <h1>Testing Pages Navigation</h1>
+        <p class="description">Select a testing page from the options below to navigate to the specific test environment.</p>
+        
+        <div class="button-container">
+            <button class="nav-button" onclick="location.href='simple-point.html'">
+                <span class="button-icon">📍</span>
+                <span class="button-text">Simple Point</span>
+                <span class="button-badge">Page 1</span>
+            </button>
+            
+            <button class="nav-button" onclick="location.href='single-line-200m.html'">
+                <span class="button-icon">📏</span>
+                <span class="button-text">Single Line 200m</span>
+                <span class="button-badge">Page 2</span>
+            </button>
+            
+            <button class="nav-button" onclick="location.href='polygon-test.html'">
+                <span class="button-icon">🔺</span>
+                <span class="button-text">Polygon Test</span>
+                <span class="button-badge">Page 3</span>
+            </button>
+            
+            <button class="nav-button" onclick="location.href='circle-test.html'">
+                <span class="button-icon">⭕</span>
+                <span class="button-text">Circle Test</span>
+                <span class="button-badge">Page 4</span>
+            </button>
+        </div>
+        
+        <p class="footer">Add more testing pages as needed for your application.</p>
+    </div>
+    
+    <script>
+        // Simple animation for buttons when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            const buttons = document.querySelectorAll('.nav-button');
+            buttons.forEach((button, index) => {
+                setTimeout(() => {
+                    button.style.opacity = 1;
+                    button.style.transform = 'scale(1)';
+                }, 100 * index);
+            });
+        });
+    </script>
 </body>
 </html>
