@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Speed Camera Alert</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==" crossorigin="anonymous">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+    #top-bar { background: #333; color: white; padding: 10px; text-align: center; }
+    #top-bar h1 { margin: 0; font-size: 1.5em; }
+    #status { margin: 10px 0; font-size: 1em; }
+    #alert-text { margin: 10px 0; font-size: 1em; color: yellow; }
+    #map { flex: 1; min-height: 0; }
+    .current-location-marker {
+      background: transparent;
+      width: 50px;
+      height: 50px;
+    }
+    .current-location-marker::before {
+      content: '';
+      display: block;
+      width: 0;
+      height: 0;
+      border-left: 15px solid transparent;
+      border-right: 15px solid transparent;
+      border-bottom: 30px solid blue;
+      position: absolute;
+      top: 10px;
+      left: 10px;
+    }
+    .current-location-label {
+      font-weight: bold;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="top-bar">
+    <h1>Speed Camera Alert</h1>
+    <p id="status">Requesting location permission...</p>
+    <p id="alert-text">No camera alert</p>
+  </div>
+  <div id="map"></div>
+  <script src="https://unpkg.com/geolib@3.3.4/lib/index.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" integrity="sha512-s/jZ2+tyro3FS2NIl2FDjK8l3+/uV1d+9vwe/FVRl3H+6z1Mk1fW3pD2Wz4q+ulQvW+VUNt4qTKr+B3rO418DAg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.js"></script>
+  <script>
+    if (typeof Papa === 'undefined') {
+      console.error('PapaParse failed to load. Trying fallback CDN...');
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/papaparse@5.4.1/papaparse.min.js';
+      script.onerror = () => console.error('Fallback PapaParse CDN also failed. Please host PapaParse locally.');
+      document.head.appendChild(script);
+    }
+  </script>
+  <script src="main.js"></script>
+</body>
+</html>
