@@ -1,0 +1,11 @@
+{
+"type": "FeatureCollection",
+"name": "fake_temp_cam_line",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "ID": "TEST_CAM_3", "SITE_DESC_": "香隧出口", "SITE_DES_1": "香隧出口", "REMARKS": null, "CRE_DATE": 20250911, "bearing": 282, "SPEED": 50 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 114.174746749191314, 22.250228695135867 ], [ 114.174619111771463, 22.249537847555196 ] ] ] } },
+{ "type": "Feature", "properties": { "ID": "TEST_CAM_2", "SITE_DESC_": "紅隧南行", "SITE_DES_1": "紅隧南行", "REMARKS": null, "CRE_DATE": 20250911, "bearing": 171, "SPEED": 50 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 114.180064623591477, 22.301364927115788 ], [ 114.180694190425328, 22.301456104421586 ] ] ] } },
+{ "type": "Feature", "properties": { "ID": "TEST_CAM_1", "SITE_DESC_": "TEST1 太子道東西行", "SITE_DES_1": "TEST1 太子道東西行", "REMARKS": "TEST1 太子道東西行", "CRE_DATE": 20250911, "bearing": 250, "SPEED": 50 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 114.200949962988361, 22.335004314533972 ], [ 114.201246909930489, 22.33449581281009 ] ] ] } },
+{ "type": "Feature", "properties": { "ID": "TEST_CAM_4", "SITE_DESC_": "太子道東東行", "SITE_DES_1": "太子道東東行", "REMARKS": null, "CRE_DATE": 20250911, "bearing": 70, "SPEED": 50 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 114.199726102028052, 22.334545775183997 ], [ 114.200017093499937, 22.333926742326405 ] ] ] } }
+]
+}
