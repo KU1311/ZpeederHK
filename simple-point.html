@@ -73,23 +73,6 @@
       font-size: 1.2em;
       cursor: pointer;
     }
-    .current-location-marker {
-      background: transparent;
-      width: 50px;
-      height: 50px;
-    }
-    .current-location-marker::before {
-      content: '';
-      display: block;
-      width: 0;
-      height: 0;
-      border-left: 15px solid transparent;
-      border-right: 15px solid transparent;
-      border-bottom: 30px solid #3498db;
-      position: absolute;
-      top: 10px;
-      left: 10px;
-    }
     .current-location-label {
       font-weight: bold;
       text-align: center;
@@ -420,10 +403,10 @@
       // User location marker
       let userMarker = null;
 
-      // Create a simple blue circle without the inner triangle
-      const createUserIcon = (heading) => {
+      // Create a simple blue circle without the triangle
+      const createUserIcon = () => {
         return L.divIcon({
-          className: 'current-location-marker',
+          className: 'user-location-marker',
           html: `
             <div style="
               width: 20px;
@@ -432,7 +415,6 @@
               border-radius: 50%;
               border: 3px solid white;
               box-shadow: 0 0 10px rgba(0,0,0,0.5);
-              transform: rotate(${heading}deg);
             "></div>
           `,
           iconSize: [20, 20],
@@ -508,15 +490,12 @@
 
           // Update user marker
           const userCoords = [latitude, longitude];
-          const currentHeading = heading || 0;
           
           if (userMarker) {
             userMarker.setLatLng(userCoords);
-            // Update the icon with new rotation
-            userMarker.setIcon(createUserIcon(currentHeading));
           } else {
             userMarker = L.marker(userCoords, {
-              icon: createUserIcon(currentHeading),
+              icon: createUserIcon(),
               zIndexOffset: 1000
             }).addTo(map).bindPopup(`<div class="current-location-label">Your Location</div>`);
             
