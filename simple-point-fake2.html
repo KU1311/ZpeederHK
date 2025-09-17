@@ -131,6 +131,18 @@
     .permission-button:hover {
       background: #27ae60;
     }
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 1s ease-in-out infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -274,6 +286,66 @@
       }
     };
     
+    // CSV loading function
+    async function loadCSVData() {
+      const csvUrl = 'https://raw.githubusercontent.com/KU1311/ZpeederHK/main/cam2025_all_test_fake2.csv';
+      
+      try {
+        document.getElementById('status').innerHTML = 'Loading camera data <span class="loading"></span>';
+        
+        const response = await fetch(csvUrl);
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        
+        const csvText = await response.text();
+        
+        // Simple CSV parser for your format
+        const lines = csvText.split('\n').filter(line => line.trim() !== '');
+        const headers = lines[0].split(',').map(header => header.trim());
+        
+        const cameras = [];
+        for (let i = 1; i < lines.length; i++) {
+          const values = lines[i].split(',').map(value => value.trim());
+          if (values.length !== headers.length) continue;
+          
+          const camera = {};
+          for (let j = 0; j < headers.length; j++) {
+            camera[headers[j]] = values[j];
+          }
+          
+          // Convert to the format our app expects
+          if (camera.lat && camera.long && camera.bearing && camera.SPEED && camera.ID) {
+            cameras.push({
+              id: camera.ID,
+              y: parseFloat(camera.lat),
+              x: parseFloat(camera.long),
+              roadDirection: parseFloat(camera.bearing),
+              remarks: camera.SITE_DES_1 || 'No description',
+              speedLimit: parseFloat(camera.SPEED),
+              travelDirection: camera.TRAVEL_DIR || 'Unknown',
+              siteDesc: camera.SITE_DESC_ || 'Unknown',
+              siteDesc2: camera.SITE_DES_2 || 'Unknown'
+            });
+          }
+        }
+        
+        document.getElementById('status').textContent = `Loaded ${cameras.length} cameras successfully`;
+        return cameras;
+      } catch (error) {
+        console.error('Error loading CSV:', error);
+        document.getElementById('status').textContent = 'Error loading camera data. Using sample data.';
+        
+        // Fallback to sample data
+        return [
+          {id: 1, y: 22.305451, x: 114.169656, roadDirection: 90, remarks: "Sample Camera 1", speedLimit: 50},
+          {id: 2, y: 22.307000, x: 114.171000, roadDirection: 270, remarks: "Sample Camera 2", speedLimit: 70},
+          {id: 3, y: 22.303500, x: 114.167200, roadDirection: 180, remarks: "Sample Camera 3", speedLimit: 50},
+          {id: 4, y: 22.308200, x: 114.165800, roadDirection: 0, remarks: "Sample Camera 4", speedLimit: 60}
+        ];
+      }
+    }
+    
     // Modified version of your main_fake.js code
     async function requestPermissions() {
       try {
@@ -299,18 +371,6 @@
       }
     }
 
-    async function loadSpeedCameras() {
-      // Using a sample data set for demonstration
-      const sampleCameras = [
-        {id: 1, y: 22.305451, x: 114.169656, roadDirection: 90, remarks: "Sample Camera 1", speedLimit: 50},
-        {id: 2, y: 22.307000, x: 114.171000, roadDirection: 270, remarks: "Sample Camera 2", speedLimit: 70},
-        {id: 3, y: 22.303500, x: 114.167200, roadDirection: 180, remarks: "Sample Camera 3", speedLimit: 50},
-        {id: 4, y: 22.308200, x: 114.165800, roadDirection: 0, remarks: "Sample Camera 4", speedLimit: 60}
-      ];
-      
-      return sampleCameras;
-    }
-
     async function startLocationMonitoring() {
       const hasPermission = await requestPermissions();
       if (!hasPermission) {
@@ -332,8 +392,8 @@
         opacity: 0.7
       }).addTo(map);
 
-      // Load speed camera data
-      const speedCameras = await loadSpeedCameras();
+      // Load speed camera data from CSV
+      const speedCameras = await loadCSVData();
       if (speedCameras.length === 0) {
         document.getElementById('status').textContent = 'Error loading speed camera data.';
         return;
@@ -348,7 +408,13 @@
           })
         })
         .addTo(map)
-        .bindPopup(`Camera ${camera.id}: ${camera.remarks}<br>Speed Limit: ${camera.speedLimit} km/h`);
+        .bindPopup(`
+          <strong>Camera ${camera.id}</strong><br>
+          ${camera.remarks}<br>
+          Speed Limit: ${camera.speedLimit} km/h<br>
+          Direction: ${camera.travelDirection}<br>
+          Bearing: ${camera.roadDirection}°
+        `);
       });
 
       // User location marker
@@ -425,7 +491,7 @@
 
           // Display alert for upcoming camera
           if (alertCamera && !alertedCameras.has(alertCamera.id)) {
-            const alertMessage = `ALERT: Camera ahead in ${Math.round(alertDistance)}m! Limit: ${alertCamera.speedLimit} km/h. ${alertCamera.remarks}`;
+            const alertMessage = `ALERT: ${alertCamera.remarks} ahead in ${Math.round(alertDistance)}m! Limit: ${alertCamera.speedLimit} km/h.`;
             showNotification(alertMessage, true);
             alertedCameras.add(alertCamera.id);
             
