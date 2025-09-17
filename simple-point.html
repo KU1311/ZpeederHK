@@ -126,6 +126,17 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+    .debug-info {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      z-index: 1000;
+      max-width: 300px;
+    }
   </style>
 </head>
 <body>
@@ -150,6 +161,11 @@
     <button class="test-button" id="test-alert">Test Alert</button>
     <button class="test-button" id="test-notification">Test Notification</button>
     <button class="test-button permission-button" id="request-permission">Request Notification Permission</button>
+  </div>
+
+  <div class="debug-info" id="debug-info" style="display: none;">
+    <strong>Debug Info:</strong>
+    <div id="debug-content"></div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
@@ -268,6 +284,12 @@
         return (toDeg(bearing) + 360) % 360;
       }
     };
+    
+    // Helper function to calculate the difference between two angles
+    function angleDifference(alpha, beta) {
+      const diff = Math.abs(alpha - beta) % 360;
+      return diff > 180 ? 360 - diff : diff;
+    }
     
     // CSV loading function
     async function loadCSVData() {
@@ -433,13 +455,15 @@
           document.getElementById('status').textContent = 
             `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}, Heading: ${heading ? heading.toFixed(0) : 'N/A'}°, Speed: ${speedKmh} km/h`;
 
-          // Find nearest upcoming camera (200m same bearing alert)
+          // Find nearest upcoming camera (200m with 180-degree bearing alert)
           let alertCamera = null;
           let alertDistance = Infinity;
           
           // Find nearest camera regardless of direction (for error checking)
           let nearestCamera = null;
           let minDistance = Infinity;
+          
+          let debugInfo = "";
           
           speedCameras.forEach(camera => {
             const dist = geolib.getDistance(
@@ -453,23 +477,28 @@
               nearestCamera = camera;
             }
             
-            // For alert camera (200m same bearing)
+            // For alert camera (200m with 180-degree bearing)
             if (heading) {
               const bearingToCamera = geolib.getRhumbLineBearing(
                 { latitude, longitude },
                 { latitude: camera.y, longitude: camera.x }
               );
               
-              const headingDifference = Math.abs(
-                ((bearingToCamera - heading + 360) % 360) - ((camera.roadDirection - heading + 360) % 360)
-              );
+              // Calculate the difference between user heading and camera direction
+              const headingDifference = angleDifference(heading, camera.roadDirection);
               
-              if (dist <= 200 && headingDifference <= 45 && dist < alertDistance) {
+              debugInfo += `Camera ${camera.id}: Dist=${Math.round(dist)}m, HDiff=${Math.round(headingDifference)}°, Bearing=${Math.round(bearingToCamera)}°<br>`;
+              
+              // Alert if within 200m and within 180 degrees of the camera's direction
+              if (dist <= 200 && headingDifference <= 180 && dist < alertDistance) {
                 alertDistance = dist;
                 alertCamera = camera;
               }
             }
           });
+          
+          // Show debug info (toggle with Alt+D)
+          document.getElementById('debug-content').innerHTML = debugInfo;
 
           // Display alert for upcoming camera
           if (alertCamera && !alertedCameras.has(alertCamera.id)) {
@@ -509,6 +538,14 @@
         { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
       );
     }
+
+    // Toggle debug info with Alt+D
+    document.addEventListener('keydown', (e) => {
+      if (e.altKey && e.key === 'd') {
+        const debugInfo = document.getElementById('debug-info');
+        debugInfo.style.display = debugInfo.style.display === 'none' ? 'block' : 'none';
+      }
+    });
 
     // Start the app
     startLocationMonitoring();
