@@ -4,14 +4,75 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Speed Camera Alert</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; }
-    #top-bar { background: #333; color: white; padding: 10px; text-align: center; }
-    #top-bar h1 { margin: 0; font-size: 1.5em; }
-    #status { margin: 10px 0; font-size: 1em; }
-    #alert-text { margin: 10px 0; font-size: 1em; color: yellow; }
-    #map { flex: 1; min-height: 0; }
+    body { 
+      font-family: Arial, sans-serif; 
+      margin: 0; 
+      display: flex; 
+      flex-direction: column; 
+      height: 100vh; 
+      background: #f0f2f5;
+    }
+    #top-bar { 
+      background: #2c3e50; 
+      color: white; 
+      padding: 15px; 
+      text-align: center; 
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+    #top-bar h1 { 
+      margin: 0; 
+      font-size: 1.5em; 
+      font-weight: 600;
+    }
+    #status { 
+      margin: 10px 0; 
+      font-size: 0.9em; 
+      color: #ecf0f1;
+    }
+    #alert-text { 
+      margin: 10px 0; 
+      font-size: 1em; 
+      color: #f1c40f;
+      font-weight: bold;
+      min-height: 20px;
+    }
+    #map { 
+      flex: 1; 
+      min-height: 0; 
+      z-index: 1;
+    }
+    .notification-panel {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 300px;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      z-index: 1000;
+      overflow: hidden;
+      display: none;
+    }
+    .notification-header {
+      background: #e74c3c;
+      color: white;
+      padding: 10px 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .notification-content {
+      padding: 15px;
+    }
+    .notification-close {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 1.2em;
+      cursor: pointer;
+    }
     .current-location-marker {
       background: transparent;
       width: 50px;
@@ -24,7 +85,7 @@
       height: 0;
       border-left: 15px solid transparent;
       border-right: 15px solid transparent;
-      border-bottom: 30px solid blue;
+      border-bottom: 30px solid #3498db;
       position: absolute;
       top: 10px;
       left: 10px;
@@ -32,6 +93,55 @@
     .current-location-label {
       font-weight: bold;
       text-align: center;
+    }
+    .camera-marker {
+      background: #e74c3c;
+      border: 2px solid white;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      box-shadow: 0 0 10px rgba(231, 76, 60, 0.7);
+    }
+    .test-buttons {
+      position: absolute;
+      top: 120px;
+      left: 10px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .test-button {
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.9em;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    .test-button:hover {
+      background: #2980b9;
+    }
+    .permission-button {
+      background: #2ecc71;
+      margin-top: 10px;
+    }
+    .permission-button:hover {
+      background: #27ae60;
+    }
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 1s ease-in-out infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
   </style>
 </head>
@@ -42,19 +152,387 @@
     <p id="alert-text">No camera alert</p>
   </div>
   <div id="map"></div>
-  <script src="https://unpkg.com/geolib@3.3.4/lib/index.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" integrity="sha512-s/jZ2+tyro3FS2NIl2FDjK8l3+/uV1d+9vwe/FVRl3H+6z1Mk1fW3pD2Wz4q+ulQvW+VUNt4qTKr+B3rO418DAg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.js"></script>
+  
+  <div class="notification-panel" id="notification-panel">
+    <div class="notification-header">
+      <span>Speed Camera Alert</span>
+      <button class="notification-close" id="notification-close">×</button>
+    </div>
+    <div class="notification-content" id="notification-content">
+      <!-- Notification content will be inserted here -->
+    </div>
+  </div>
+  
+  <div class="test-buttons">
+    <button class="test-button" id="test-alert">Test Alert</button>
+    <button class="test-button" id="test-notification">Test Notification</button>
+    <button class="test-button permission-button" id="request-permission">Request Notification Permission</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
   <script>
-    if (typeof Papa === 'undefined') {
-      console.error('PapaParse failed to load. Trying fallback CDN...');
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/papaparse@5.4.1/papaparse.min.js';
-      script.onerror = () => console.error('Fallback PapaParse CDN also failed. Please host PapaParse locally.');
-      document.head.appendChild(script);
+    // Audio for alert sound
+    const alertSound = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbVtfdJivrJBhNjVgodDbq2EcBStztvLPgEMTACFvxOnBajgOABpnv+fCbDcNABZhuuS/bDcMABVfuOO+bDcMABRdt+O9bDcMABNctuO8bDcLABJbteO7bDcLABFateO6bDcKABBZtOO5bDcKAA9Ys+O4bDcJAA5XsuO3bDcJAA1WseO2bDcIAAxVsOO1bDcIAApUruO0bDcHAAhTreOzbDcHAAZSrOOybDcGAAVRq+OxbDcGAAVQquOwbDcFAABOqOOvbDcFAABNp+OubDcEAABLpuOtbDcEAABKpeOsbDcDAABJpOOrbDcDAAA=");
+    
+    // Notification panel elements
+    const notificationPanel = document.getElementById('notification-panel');
+    const notificationContent = document.getElementById('notification-content');
+    const notificationClose = document.getElementById('notification-close');
+    
+    // Close notification panel
+    notificationClose.addEventListener('click', () => {
+      notificationPanel.style.display = 'none';
+    });
+    
+    // Show notification function
+    function showNotification(message, isAlert = false) {
+      // Update alert text in top bar
+      document.getElementById('alert-text').textContent = message;
+      
+      // Show popup notification
+      notificationContent.textContent = message;
+      notificationPanel.style.display = 'block';
+      
+      // Play alert sound for actual alerts (not tests)
+      if (isAlert) {
+        alertSound.play().catch(e => console.log('Audio play failed:', e));
+      }
+      
+      // Show browser notification if supported and granted
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Speed Camera Alert', {
+          body: message,
+          icon: 'https://cdn-icons-png.flaticon.com/512/4298/4298340.png',
+          tag: 'speed-camera-alert'
+        });
+      }
+      
+      // Auto-hide notification after 10 seconds
+      setTimeout(() => {
+        notificationPanel.style.display = 'none';
+      }, 10000);
     }
+    
+    // Test buttons functionality
+    document.getElementById('test-alert').addEventListener('click', () => {
+      showNotification('TEST ALERT: Camera ahead in 150m! Limit: 50 km/h. Test location', true);
+    });
+    
+    document.getElementById('test-notification').addEventListener('click', () => {
+      if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+          new Notification('Test Notification', {
+            body: 'This is a test notification from Speed Camera Alert',
+            icon: 'https://cdn-icons-png.flaticon.com/512/4298/4298340.png'
+          });
+        } else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then(permission => {
+            if (permission === 'granted') {
+              new Notification('Test Notification', {
+                body: 'This is a test notification from Speed Camera Alert',
+                icon: 'https://cdn-icons-png.flaticon.com/512/4298/4298340.png'
+              });
+            }
+          });
+        }
+      }
+    });
+    
+    // Request notification permission
+    document.getElementById('request-permission').addEventListener('click', () => {
+      if ('Notification' in window) {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            alert('Notification permission granted!');
+          } else {
+            alert('Notification permission denied.');
+          }
+        });
+      } else {
+        alert('This browser does not support notifications.');
+      }
+    });
+    
+    // Geolib functions (since we can't load the external library)
+    const geolib = {
+      getDistance: (start, end) => {
+        // Haversine formula to calculate distance between two points
+        const toRad = (value) => (value * Math.PI) / 180;
+        const R = 6371000; // Earth radius in meters
+        const dLat = toRad(end.latitude - start.latitude);
+        const dLon = toRad(end.longitude - start.longitude);
+        const lat1 = toRad(start.latitude);
+        const lat2 = toRad(end.latitude);
+        
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(lat1) * Math.cos(lat2); 
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+        return R * c;
+      },
+      
+      getRhumbLineBearing: (start, end) => {
+        // Calculate bearing between two points
+        const toRad = (value) => (value * Math.PI) / 180;
+        const toDeg = (value) => (value * 180) / Math.PI;
+        
+        const lat1 = toRad(start.latitude);
+        const lat2 = toRad(end.latitude);
+        const dLon = toRad(end.longitude - start.longitude);
+        
+        const dPhi = Math.log(Math.tan(lat2/2 + Math.PI/4) / Math.tan(lat1/2 + Math.PI/4));
+        let bearing = Math.atan2(dLon, dPhi);
+        
+        return (toDeg(bearing) + 360) % 360;
+      }
+    };
+    
+    // CSV loading function
+    async function loadCSVData() {
+      const csvUrl = 'https://raw.githubusercontent.com/KU1311/ZpeederHK/main/cam2025_all_test1.csv';
+      
+      try {
+        document.getElementById('status').innerHTML = 'Loading camera data <span class="loading"></span>';
+        
+        const response = await fetch(csvUrl);
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        
+        const csvText = await response.text();
+        
+        // Simple CSV parser for your format
+        const lines = csvText.split('\n').filter(line => line.trim() !== '');
+        const headers = lines[0].split(',').map(header => header.trim());
+        
+        const cameras = [];
+        for (let i = 1; i < lines.length; i++) {
+          const values = lines[i].split(',').map(value => value.trim());
+          if (values.length !== headers.length) continue;
+          
+          const camera = {};
+          for (let j = 0; j < headers.length; j++) {
+            camera[headers[j]] = values[j];
+          }
+          
+          // Convert to the format our app expects
+          if (camera.lat && camera.long && camera.bearing && camera.SPEED && camera.ID) {
+            cameras.push({
+              id: camera.ID,
+              y: parseFloat(camera.lat),
+              x: parseFloat(camera.long),
+              roadDirection: parseFloat(camera.bearing),
+              remarks: camera.SITE_DES_1 || 'No description',
+              speedLimit: parseFloat(camera.SPEED),
+              travelDirection: camera.TRAVEL_DIR || 'Unknown',
+              siteDesc: camera.SITE_DESC_ || 'Unknown',
+              siteDesc2: camera.SITE_DES_2 || 'Unknown'
+            });
+          }
+        }
+        
+        document.getElementById('status').textContent = `Loaded ${cameras.length} cameras successfully`;
+        return cameras;
+      } catch (error) {
+        console.error('Error loading CSV:', error);
+        document.getElementById('status').textContent = 'Error loading camera data. Using sample data.';
+        
+        // Fallback to sample data
+        return [
+          {id: 1, y: 22.305451, x: 114.169656, roadDirection: 90, remarks: "Sample Camera 1", speedLimit: 50},
+          {id: 2, y: 22.307000, x: 114.171000, roadDirection: 270, remarks: "Sample Camera 2", speedLimit: 70},
+          {id: 3, y: 22.303500, x: 114.167200, roadDirection: 180, remarks: "Sample Camera 3", speedLimit: 50},
+          {id: 4, y: 22.308200, x: 114.165800, roadDirection: 0, remarks: "Sample Camera 4", speedLimit: 60}
+        ];
+      }
+    }
+    
+    // Modified version of your main_fake.js code
+    async function requestPermissions() {
+      try {
+        if (!navigator.geolocation) {
+          alert('Geolocation is not supported by your browser.');
+          return false;
+        }
+        
+        return new Promise((resolve) => {
+          navigator.geolocation.getCurrentPosition(
+            () => resolve(true),
+            (error) => {
+              console.error('Geolocation error:', error);
+              alert('Location permission is required to use this app.');
+              resolve(false);
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+          );
+        });
+      } catch (err) {
+        console.error('Permission error:', err);
+        return false;
+      }
+    }
+
+    async function startLocationMonitoring() {
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) {
+        document.getElementById('status').textContent = 'Location permission denied.';
+        return;
+      }
+
+      if ('Notification' in window && Notification.permission !== 'granted') {
+        // We'll request notification permission with a button instead
+        document.getElementById('status').textContent = 'Click "Request Notification Permission" for alerts';
+      }
+
+      // Initialize map with default coordinates (fallback)
+      const defaultCoords = [22.305451, 114.169656];
+      const defaultZoom = 15; // ~500m view
+      const map = L.map('map').setView(defaultCoords, defaultZoom);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        opacity: 0.7
+      }).addTo(map);
+
+      // Load speed camera data from CSV
+      const speedCameras = await loadCSVData();
+      if (speedCameras.length === 0) {
+        document.getElementById('status').textContent = 'Error loading speed camera data.';
+        return;
+      }
+
+      // Add camera markers
+      speedCameras.forEach(camera => {
+        L.marker([camera.y, camera.x], {
+          icon: L.divIcon({
+            className: 'camera-marker',
+            iconSize: [20, 20]
+          })
+        })
+        .addTo(map)
+        .bindPopup(`
+          <strong>Camera ${camera.id}</strong><br>
+          ${camera.remarks}<br>
+          Speed Limit: ${camera.speedLimit} km/h<br>
+          Direction: ${camera.travelDirection}<br>
+          Bearing: ${camera.roadDirection}°
+        `);
+      });
+
+      // User location marker
+      let userMarker = null;
+
+      // Create a simple blue circle without the inner triangle
+      const createUserIcon = (heading) => {
+        return L.divIcon({
+          className: 'current-location-marker',
+          html: `
+            <div style="
+              width: 20px;
+              height: 20px;
+              background: #3498db;
+              border-radius: 50%;
+              border: 3px solid white;
+              box-shadow: 0 0 10px rgba(0,0,0,0.5);
+              transform: rotate(${heading}deg);
+            "></div>
+          `,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+      };
+
+      // Track which cameras have triggered alerts
+      const alertedCameras = new Set();
+
+      // Update UI with location and speed
+      navigator.geolocation.watchPosition(
+        position => {
+          const { latitude, longitude, heading, speed } = position.coords;
+          const speedKmh = speed ? (speed * 3.6).toFixed(1) : 'N/A';
+          document.getElementById('status').textContent = 
+            `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}, Heading: ${heading ? heading.toFixed(0) : 'N/A'}°, Speed: ${speedKmh} km/h`;
+
+          // Find nearest upcoming camera (200m same bearing alert)
+          let alertCamera = null;
+          let alertDistance = Infinity;
+          
+          // Find nearest camera regardless of direction (for error checking)
+          let nearestCamera = null;
+          let minDistance = Infinity;
+          
+          speedCameras.forEach(camera => {
+            const dist = geolib.getDistance(
+              { latitude, longitude },
+              { latitude: camera.y, longitude: camera.x }
+            );
+            
+            // For nearest camera (any direction)
+            if (dist < minDistance) {
+              minDistance = dist;
+              nearestCamera = camera;
+            }
+            
+            // For alert camera (200m same bearing)
+            if (heading) {
+              const bearingToCamera = geolib.getRhumbLineBearing(
+                { latitude, longitude },
+                { latitude: camera.y, longitude: camera.x }
+              );
+              
+              const headingDifference = Math.abs(
+                ((bearingToCamera - heading + 360) % 360) - ((camera.roadDirection - heading + 360) % 360)
+              );
+              
+              if (dist <= 200 && headingDifference <= 45 && dist < alertDistance) {
+                alertDistance = dist;
+                alertCamera = camera;
+              }
+            }
+          });
+
+          // Display alert for upcoming camera
+          if (alertCamera && !alertedCameras.has(alertCamera.id)) {
+            const alertMessage = `ALERT: ${alertCamera.remarks} ahead in ${Math.round(alertDistance)}m! Limit: ${alertCamera.speedLimit} km/h.`;
+            showNotification(alertMessage, true);
+            alertedCameras.add(alertCamera.id);
+            
+            // Remove from alerted set after 2 minutes
+            setTimeout(() => {
+              alertedCameras.delete(alertCamera.id);
+            }, 120000);
+          }
+          
+          // Display nearest camera info for debugging (in console or status)
+          if (nearestCamera) {
+            console.log(`Nearest camera: ${Math.round(minDistance)}m - ${nearestCamera.remarks} (Limit: ${nearestCamera.speedLimit} km/h)`);
+          }
+
+          // Update user marker
+          const userCoords = [latitude, longitude];
+          const currentHeading = heading || 0;
+          
+          if (userMarker) {
+            userMarker.setLatLng(userCoords);
+            // Update the icon with new rotation
+            userMarker.setIcon(createUserIcon(currentHeading));
+          } else {
+            userMarker = L.marker(userCoords, {
+              icon: createUserIcon(currentHeading),
+              zIndexOffset: 1000
+            }).addTo(map).bindPopup(`<div class="current-location-label">Your Location</div>`);
+            
+            // Center map on user location when first getting position
+            map.setView(userCoords, 16);
+          }
+        },
+        error => {
+          document.getElementById('status').textContent = 'Error fetching location: ' + error.message;
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+      );
+    }
+
+    // Start the app
+    startLocationMonitoring();
   </script>
-  <script src="main.js"></script>
 </body>
 </html>
