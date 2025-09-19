@@ -37,6 +37,10 @@
       color: #f1c40f;
       font-weight: bold;
       min-height: 20px;
+      transition: opacity 0.5s ease;
+    }
+    #alert-text.fade-out {
+      opacity: 0.5;
     }
     #map { 
       flex: 1; 
@@ -54,6 +58,22 @@
       z-index: 1000;
       overflow: hidden;
       display: none;
+      transition: transform 0.3s ease;
+    }
+    .notification-panel.show {
+      display: block;
+      animation: slideIn 0.5s forwards;
+    }
+    .notification-panel.hide {
+      animation: slideOut 0.5s forwards;
+    }
+    @keyframes slideIn {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); }
+      to { transform: translateX(100%); }
     }
     .notification-header {
       background: #e74c3c;
@@ -126,17 +146,6 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
-    .debug-info {
-      position: absolute;
-      bottom: 10px;
-      left: 10px;
-      background: rgba(255, 255, 255, 0.8);
-      padding: 10px;
-      border-radius: 5px;
-      font-size: 12px;
-      z-index: 1000;
-      max-width: 300px;
-    }
     .background-status {
       position: absolute;
       top: 10px;
@@ -147,6 +156,40 @@
       border-radius: 5px;
       font-size: 12px;
       z-index: 1000;
+    }
+    .instructions {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 15px;
+      border-radius: 5px;
+      font-size: 14px;
+      z-index: 1000;
+      max-width: 300px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+    .instructions h3 {
+      margin-top: 0;
+      color: #2c3e50;
+    }
+    .instructions ol {
+      padding-left: 20px;
+    }
+    .instructions li {
+      margin-bottom: 8px;
+    }
+    .camera-alert-indicator {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(231, 76, 60, 0.9);
+      color: white;
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      z-index: 1000;
+      display: none;
     }
   </style>
 </head>
@@ -168,20 +211,30 @@
     </div>
   </div>
   
+  <div class="camera-alert-indicator" id="camera-alert-indicator">
+    Camera Alert Active
+  </div>
+  
   <div class="test-buttons">
     <button class="test-button" id="test-alert">Test Alert</button>
     <button class="test-button" id="test-notification">Test Notification</button>
-    <button class="test-button permission-button" id="request-permission">Request Notification Permission</button>
-    <button class="test-button" id="enable-background">Enable Background Mode</button>
+    <button class="test-button permission-button" id="request-permission">Enable Background Alerts</button>
+    <button class="test-button" id="reset-alerts">Reset Alerts</button>
   </div>
 
   <div class="background-status" id="background-status" style="display: none;">
     Background Mode: Active
   </div>
 
-  <div class="debug-info" id="debug-info" style="display: none;">
-    <strong>Debug Info:</strong>
-    <div id="debug-content"></div>
+  <div class="instructions">
+    <h3>Enable Background Notifications:</h3>
+    <ol>
+      <li>Click "Enable Background Alerts"</li>
+      <li>Allow notification permissions</li>
+      <li>Keep this tab open (don't close browser)</li>
+      <li>Minimize browser or switch to another app</li>
+    </ol>
+    <p><strong>Note:</strong> Works best on Chrome/Edge for Android. iOS has limitations.</p>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
@@ -193,24 +246,38 @@
     const notificationPanel = document.getElementById('notification-panel');
     const notificationContent = document.getElementById('notification-content');
     const notificationClose = document.getElementById('notification-close');
+    const cameraAlertIndicator = document.getElementById('camera-alert-indicator');
+    const alertText = document.getElementById('alert-text');
     
-    // Service Worker registration
-    let serviceWorkerRegistration = null;
-    let backgroundModeEnabled = false;
+    // Alert tracking
+    let alertedCameras = new Set();
+    let activeNotification = null;
+    let notificationTimeout = null;
     
     // Close notification panel
     notificationClose.addEventListener('click', () => {
-      notificationPanel.style.display = 'none';
+      hideNotification();
     });
     
     // Show notification function
     function showNotification(message, isAlert = false) {
+      // Clear any existing notification timeout
+      if (notificationTimeout) {
+        clearTimeout(notificationTimeout);
+        notificationTimeout = null;
+      }
+      
       // Update alert text in top bar
-      document.getElementById('alert-text').textContent = message;
+      alertText.textContent = message;
+      alertText.classList.remove('fade-out');
       
       // Show popup notification
       notificationContent.textContent = message;
-      notificationPanel.style.display = 'block';
+      notificationPanel.classList.remove('hide');
+      notificationPanel.classList.add('show');
+      
+      // Show camera alert indicator
+      cameraAlertIndicator.style.display = 'block';
       
       // Play alert sound for actual alerts (not tests)
       if (isAlert) {
@@ -219,18 +286,61 @@
       
       // Show browser notification if supported and granted
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Speed Camera Alert', {
+        // Close any existing notification
+        if (activeNotification) {
+          activeNotification.close();
+        }
+        
+        activeNotification = new Notification('Speed Camera Alert', {
           body: message,
           icon: 'https://cdn-icons-png.flaticon.com/512/4298/4298340.png',
           tag: 'speed-camera-alert',
           requireInteraction: true
         });
+        
+        // Handle notification click
+        activeNotification.onclick = () => {
+          window.focus();
+          activeNotification.close();
+          activeNotification = null;
+        };
       }
       
       // Auto-hide notification after 10 seconds
-      setTimeout(() => {
-        notificationPanel.style.display = 'none';
+      notificationTimeout = setTimeout(() => {
+        hideNotification();
       }, 10000);
+    }
+    
+    // Hide notification function
+    function hideNotification() {
+      notificationPanel.classList.remove('show');
+      notificationPanel.classList.add('hide');
+      
+      // Fade out the alert text
+      alertText.classList.add('fade-out');
+      
+      // Hide camera alert indicator after a delay
+      setTimeout(() => {
+        cameraAlertIndicator.style.display = 'none';
+        notificationPanel.style.display = 'none';
+        notificationPanel.classList.remove('hide');
+      }, 500);
+      
+      // Close browser notification if exists
+      if (activeNotification) {
+        activeNotification.close();
+        activeNotification = null;
+      }
+    }
+    
+    // Reset alerts function
+    function resetAlerts() {
+      alertedCameras.clear();
+      alertText.textContent = 'No camera alert';
+      alertText.classList.remove('fade-out');
+      hideNotification();
+      console.log('All alerts have been reset');
     }
     
     // Test buttons functionality
@@ -260,22 +370,12 @@
     
     // Request notification permission
     document.getElementById('request-permission').addEventListener('click', () => {
-      if ('Notification' in window) {
-        Notification.requestPermission().then(permission => {
-          if (permission === 'granted') {
-            alert('Notification permission granted!');
-          } else {
-            alert('Notification permission denied.');
-          }
-        });
-      } else {
-        alert('This browser does not support notifications.');
-      }
+      enableBackgroundMode();
     });
     
-    // Enable background mode
-    document.getElementById('enable-background').addEventListener('click', () => {
-      enableBackgroundMode();
+    // Reset alerts button
+    document.getElementById('reset-alerts').addEventListener('click', () => {
+      resetAlerts();
     });
     
     // Geolib functions (since we can't load the external library)
@@ -319,9 +419,10 @@
     
     // Register Service Worker for background operation
     async function registerServiceWorker() {
-      if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      if ('serviceWorker' in navigator) {
         try {
-          serviceWorkerRegistration = await navigator.serviceWorker.register('sw.js');
+          // Register the service worker
+          const registration = await navigator.serviceWorker.register('sw.js');
           console.log('Service Worker registered');
           
           // Listen for messages from the service worker
@@ -331,51 +432,37 @@
             }
           });
           
-          return true;
+          return registration;
         } catch (error) {
           console.error('Service Worker registration failed:', error);
-          return false;
+          return null;
         }
       }
-      return false;
+      return null;
     }
     
     // Enable background mode
     async function enableBackgroundMode() {
-      if (await registerServiceWorker()) {
-        backgroundModeEnabled = true;
-        document.getElementById('background-status').style.display = 'block';
-        alert('Background mode enabled! The app will now work even when minimized or in the background.');
-      } else {
-        alert('Background mode is not supported in this browser. Please use Chrome or Edge for full functionality.');
-      }
-    }
-    
-    // Send camera data to service worker
-    function sendCameraDataToSW(cameras) {
-      if (serviceWorkerRegistration && serviceWorkerRegistration.active) {
-        serviceWorkerRegistration.active.postMessage({
-          type: 'SET_CAMERAS',
-          cameras: cameras
-        });
-      }
-    }
-    
-    // Send location update to service worker
-    function sendLocationToSW(position) {
-      if (serviceWorkerRegistration && serviceWorkerRegistration.active && backgroundModeEnabled) {
-        serviceWorkerRegistration.active.postMessage({
-          type: 'LOCATION_UPDATE',
-          position: {
-            coords: {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              heading: position.coords.heading,
-              speed: position.coords.speed
-            },
-            timestamp: position.timestamp
+      // Request notification permission first
+      if ('Notification' in window) {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          // Register service worker
+          const registration = await registerServiceWorker();
+          if (registration) {
+            document.getElementById('background-status').style.display = 'block';
+            document.getElementById('request-permission').textContent = 'Background Mode Active';
+            document.getElementById('request-permission').style.background = '#27ae60';
+            
+            alert('Background notifications enabled! The app will now send alerts even when minimized.');
+          } else {
+            alert('Background mode is not fully supported in this browser. Notifications will work when the app is open.');
           }
-        });
+        } else {
+          alert('Notification permission is required for background alerts.');
+        }
+      } else {
+        alert('This browser does not support notifications.');
       }
     }
     
@@ -424,27 +511,18 @@
         }
         
         document.getElementById('status').textContent = `Loaded ${cameras.length} cameras successfully`;
-        
-        // Send camera data to service worker for background operation
-        sendCameraDataToSW(cameras);
-        
         return cameras;
       } catch (error) {
         console.error('Error loading CSV:', error);
         document.getElementById('status').textContent = 'Error loading camera data. Using sample data.';
         
         // Fallback to sample data
-        const sampleCameras = [
+        return [
           {id: 1, y: 22.305451, x: 114.169656, roadDirection: 90, remarks: "Sample Camera 1", speedLimit: 50},
           {id: 2, y: 22.307000, x: 114.171000, roadDirection: 270, remarks: "Sample Camera 2", speedLimit: 70},
           {id: 3, y: 22.303500, x: 114.167200, roadDirection: 180, remarks: "Sample Camera 3", speedLimit: 50},
           {id: 4, y: 22.308200, x: 114.165800, roadDirection: 0, remarks: "Sample Camera 4", speedLimit: 60}
         ];
-        
-        // Send sample camera data to service worker
-        sendCameraDataToSW(sampleCameras);
-        
-        return sampleCameras;
       }
     }
     
@@ -478,11 +556,6 @@
       if (!hasPermission) {
         document.getElementById('status').textContent = 'Location permission denied.';
         return;
-      }
-
-      if ('Notification' in window && Notification.permission !== 'granted') {
-        // We'll request notification permission with a button instead
-        document.getElementById('status').textContent = 'Click "Request Notification Permission" for alerts';
       }
 
       // Initialize map with default coordinates (fallback)
@@ -541,9 +614,6 @@
         });
       };
 
-      // Track which cameras have triggered alerts
-      const alertedCameras = new Set();
-
       // Update UI with location and speed
       navigator.geolocation.watchPosition(
         position => {
@@ -552,30 +622,15 @@
           document.getElementById('status').textContent = 
             `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}, Heading: ${heading ? heading.toFixed(0) : 'N/A'}°, Speed: ${speedKmh} km/h`;
 
-          // Send location to service worker for background operation
-          sendLocationToSW(position);
-
           // Find nearest upcoming camera (200m with 180-degree bearing alert)
           let alertCamera = null;
           let alertDistance = Infinity;
-          
-          // Find nearest camera regardless of direction (for error checking)
-          let nearestCamera = null;
-          let minDistance = Infinity;
-          
-          let debugInfo = "";
           
           speedCameras.forEach(camera => {
             const dist = geolib.getDistance(
               { latitude, longitude },
               { latitude: camera.y, longitude: camera.x }
             );
-            
-            // For nearest camera (any direction)
-            if (dist < minDistance) {
-              minDistance = dist;
-              nearestCamera = camera;
-            }
             
             // For alert camera (200m with 180-degree bearing)
             if (heading) {
@@ -587,34 +642,43 @@
               // Calculate the difference between user heading and camera direction
               const headingDifference = angleDifference(heading, camera.roadDirection);
               
-              debugInfo += `Camera ${camera.id}: Dist=${Math.round(dist)}m, HDiff=${Math.round(headingDifference)}°, Bearing=${Math.round(bearingToCamera)}°<br>`;
-              
               // Alert if within 200m and within 180 degrees of the camera's direction
+              // And if we haven't alerted for this camera recently
               if (dist <= 200 && headingDifference <= 180 && dist < alertDistance) {
-                alertDistance = dist;
-                alertCamera = camera;
+                // Check if we've already alerted for this camera
+                const cameraAlertKey = `${camera.id}-${Math.round(dist/50)*50}`; // Group by 50m increments
+                
+                if (!alertedCameras.has(cameraAlertKey)) {
+                  alertDistance = dist;
+                  alertCamera = {
+                    camera: camera,
+                    alertKey: cameraAlertKey
+                  };
+                }
               }
             }
           });
-          
-          // Show debug info (toggle with Alt+D)
-          document.getElementById('debug-content').innerHTML = debugInfo;
 
           // Display alert for upcoming camera
-          if (alertCamera && !alertedCameras.has(alertCamera.id)) {
-            const alertMessage = `ALERT: ${alertCamera.remarks} ahead in ${Math.round(alertDistance)}m! Limit: ${alertCamera.speedLimit} km/h.`;
+          if (alertCamera && !alertedCameras.has(alertCamera.alertKey)) {
+            const alertMessage = `ALERT: ${alertCamera.camera.remarks} ahead in ${Math.round(alertDistance)}m! Limit: ${alertCamera.camera.speedLimit} km/h.`;
             showNotification(alertMessage, true);
-            alertedCameras.add(alertCamera.id);
+            
+            // Add to alerted cameras with timeout
+            alertedCameras.add(alertCamera.alertKey);
             
             // Remove from alerted set after 2 minutes
             setTimeout(() => {
-              alertedCameras.delete(alertCamera.id);
+              alertedCameras.delete(alertCamera.alertKey);
+              console.log(`Alert for camera ${alertCamera.camera.id} reset`);
             }, 120000);
-          }
-          
-          // Display nearest camera info for debugging (in console or status)
-          if (nearestCamera) {
-            console.log(`Nearest camera: ${Math.round(minDistance)}m - ${nearestCamera.remarks} (Limit: ${nearestCamera.speedLimit} km/h)`);
+          } else if (alertDistance > 500) {
+            // If no camera is nearby, ensure alert is cleared
+            if (alertText.textContent !== 'No camera alert' && alertText.textContent !== '') {
+              alertText.textContent = 'No camera alert';
+              alertText.classList.remove('fade-out');
+              hideNotification();
+            }
           }
 
           // Update user marker
@@ -638,14 +702,6 @@
         { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
       );
     }
-
-    // Toggle debug info with Alt+D
-    document.addEventListener('keydown', (e) => {
-      if (e.altKey && e.key === 'd') {
-        const debugInfo = document.getElementById('debug-info');
-        debugInfo.style.display = debugInfo.style.display === 'none' ? 'block' : 'none';
-      }
-    });
 
     // Start the app
     startLocationMonitoring();
