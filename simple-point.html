@@ -20,6 +20,8 @@
       padding: 15px; 
       text-align: center; 
       box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      position: relative;
+      z-index: 1001;
     }
     #top-bar h1 { 
       margin: 0; 
@@ -191,6 +193,62 @@
       z-index: 1000;
       display: none;
     }
+    .persistent-notification {
+      position: fixed;
+      bottom: 70px;
+      left: 10px;
+      background: rgba(52, 152, 219, 0.9);
+      color: white;
+      padding: 10px 15px;
+      border-radius: 5px;
+      font-size: 14px;
+      z-index: 1000;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pulse {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #2ecc71;
+      box-shadow: 0 0 0 rgba(46, 204, 113, 0.4);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.4); }
+      70% { box-shadow: 0 0 0 10px rgba(46, 204, 113, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+    }
+    .battery-optimization {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      z-index: 2000;
+      max-width: 300px;
+      display: none;
+    }
+    .battery-optimization h3 {
+      margin-top: 0;
+      color: #2c3e50;
+    }
+    .battery-optimization button {
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -211,6 +269,11 @@
     </div>
   </div>
   
+  <div class="persistent-notification" id="persistent-notification">
+    <div class="pulse"></div>
+    <span>Speed Camera Alert is running in background</span>
+  </div>
+  
   <div class="camera-alert-indicator" id="camera-alert-indicator">
     Camera Alert Active
   </div>
@@ -218,7 +281,7 @@
   <div class="test-buttons">
     <button class="test-button" id="test-alert">Test Alert</button>
     <button class="test-button" id="test-notification">Test Notification</button>
-    <button class="test-button permission-button" id="request-permission">Enable Background Alerts</button>
+    <button class="test-button permission-button" id="request-permission">Enable Background Mode</button>
     <button class="test-button" id="reset-alerts">Reset Alerts</button>
   </div>
 
@@ -226,21 +289,27 @@
     Background Mode: Active
   </div>
 
+  <div class="battery-optimization" id="battery-optimization">
+    <h3>Battery Optimization</h3>
+    <p>For best results, disable battery optimization for your browser in phone settings to prevent the app from being suspended in background.</p>
+    <button id="close-battery">Got it</button>
+  </div>
+
   <div class="instructions">
-    <h3>Enable Background Notifications:</h3>
+    <h3>For Background Operation:</h3>
     <ol>
-      <li>Click "Enable Background Alerts"</li>
-      <li>Allow notification permissions</li>
-      <li>Keep this tab open (don't close browser)</li>
-      <li>Minimize browser or switch to another app</li>
+      <li>Enable background mode</li>
+      <li>Keep this tab open</li>
+      <li>Don't force close browser</li>
+      <li>Check battery settings</li>
     </ol>
-    <p><strong>Note:</strong> Works best on Chrome/Edge for Android. iOS has limitations.</p>
+    <p><strong>Note:</strong> iOS Safari has significant background limitations.</p>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
   <script>
     // Audio for alert sound
-    const alertSound = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbVtfdJivrJBhNjVgodDbq2EcBStztvLPgEMTACFvxOnBajgOABpnv+fCbDcNABZhuuS/bDcMABVfuOO+bDcMABRdt+O9bDcMABNctuO8bDcLABJbteO7bDcLABFateO6bDcKABBZtOO5bDcKAA9Ys+O4bDcJAA5XsuO3bDcJAA1WseO2bDcIAAxVsOO1bDcIAApUruO0bDcHAAhTreOzbDcHAAZSrOOybDcGAAVRq+OxbDcGAAVQquOwbDcFAABOqOOvbDcFAABNp+OubDcEAABLpuOtbDcEAABKpeOsbDcDAABJpOOrbDcDAAA=");
+    const alertSound = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbVtfdJivrJBhNjVgodDbq2EcBStztvLPgEMTACFvxOnBajgOABpnv+fCbDcNABZhuuS/bDcMABVfuOO+bDcMABRdt+O9bDcMABNctuO8bDcLABJbteO7bDcLABFateO6bDcKABBZtOO5bDcKAA9Ys+O4bDcJAA5XsimplbmRzb3VuZCI7czowOiIiO3M6MTQ6ImlzX3B1Ymxpc2hlZCI7YjoxO3M6ODoic3RhbmRpbmciO2I6MTtzOjg6ImR1cmF0aW9uIjtpOjE7czo4OiJtZXRhZGF0YSI7Tzo4OiJzdGRDbGFzcyI6MDp7fXM6MTA6Imdyb3VuZFNvbmdzIjthOjA6e319fQ==");
     
     // Notification panel elements
     const notificationPanel = document.getElementById('notification-panel');
@@ -248,11 +317,28 @@
     const notificationClose = document.getElementById('notification-close');
     const cameraAlertIndicator = document.getElementById('camera-alert-indicator');
     const alertText = document.getElementById('alert-text');
+    const persistentNotification = document.getElementById('persistent-notification');
+    const batteryOptimization = document.getElementById('battery-optimization');
     
     // Alert tracking
     let alertedCameras = new Set();
     let activeNotification = null;
     let notificationTimeout = null;
+    let backgroundModeEnabled = false;
+    let lastPosition = null;
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+      // Show battery optimization tip after a delay
+      setTimeout(() => {
+        batteryOptimization.style.display = 'block';
+      }, 10000);
+    });
+    
+    // Close battery optimization tip
+    document.getElementById('close-battery').addEventListener('click', () => {
+      batteryOptimization.style.display = 'none';
+    });
     
     // Close notification panel
     notificationClose.addEventListener('click', () => {
@@ -281,7 +367,16 @@
       
       // Play alert sound for actual alerts (not tests)
       if (isAlert) {
-        alertSound.play().catch(e => console.log('Audio play failed:', e));
+        try {
+          alertSound.play().catch(e => {
+            console.log('Audio play failed:', e);
+            // Try creating a new audio instance
+            const newAlertSound = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbVtfdJivrJBhNjVgodDbq2EcBStztvLPgEMTACFvxOnBajgOABpnv+fCbDcNABZhuuS/bDcMABVfuOO+bDcMABRdt+O9bDcMABNctuO8bDcLABJbteO7bDcLABFateO6bDcKABBZtOO5bDcKAA9Ys+O4bDcJAA5XsuO3bDcJAA1WseO2bDcIAAxVsOO1bDcIAApUruO0bDcHAAhTreOzbDcHAAZSrOOybDcGAAVRq+OxbDcGAAVQquOwbDcFAABOqOOvbDcFAABNp+OubDcEAABLpuOtbDcEAABKpeOsbDcDAABJpOOrbDcDAAA=");
+            newAlertSound.play();
+          });
+        } catch (e) {
+          console.error('Error playing sound:', e);
+        }
       }
       
       // Show browser notification if supported and granted
@@ -378,7 +473,7 @@
       resetAlerts();
     });
     
-    // Geolib functions (since we can't load the external library)
+    // Geolib functions
     const geolib = {
       getDistance: (start, end) => {
         // Haversine formula to calculate distance between two points
@@ -417,47 +512,24 @@
       return diff > 180 ? 360 - diff : diff;
     }
     
-    // Register Service Worker for background operation
-    async function registerServiceWorker() {
-      if ('serviceWorker' in navigator) {
-        try {
-          // Register the service worker
-          const registration = await navigator.serviceWorker.register('sw.js');
-          console.log('Service Worker registered');
-          
-          // Listen for messages from the service worker
-          navigator.serviceWorker.addEventListener('message', event => {
-            if (event.data && event.data.type === 'ALERT') {
-              showNotification(event.data.message, true);
-            }
-          });
-          
-          return registration;
-        } catch (error) {
-          console.error('Service Worker registration failed:', error);
-          return null;
-        }
-      }
-      return null;
-    }
-    
     // Enable background mode
     async function enableBackgroundMode() {
       // Request notification permission first
       if ('Notification' in window) {
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
-          // Register service worker
-          const registration = await registerServiceWorker();
-          if (registration) {
-            document.getElementById('background-status').style.display = 'block';
-            document.getElementById('request-permission').textContent = 'Background Mode Active';
-            document.getElementById('request-permission').style.background = '#27ae60';
-            
-            alert('Background notifications enabled! The app will now send alerts even when minimized.');
-          } else {
-            alert('Background mode is not fully supported in this browser. Notifications will work when the app is open.');
-          }
+          backgroundModeEnabled = true;
+          document.getElementById('background-status').style.display = 'block';
+          document.getElementById('request-permission').textContent = 'Background Mode Active';
+          document.getElementById('request-permission').style.background = '#27ae60';
+          persistentNotification.style.display = 'flex';
+          
+          // Show persistent notification for 5 seconds
+          setTimeout(() => {
+            persistentNotification.style.display = 'none';
+          }, 5000);
+          
+          alert('Background mode enabled! Keep this tab open for alerts when minimized.');
         } else {
           alert('Notification permission is required for background alerts.');
         }
@@ -526,6 +598,22 @@
       }
     }
     
+    // Check if page is visible
+    function isPageVisible() {
+      return !document.hidden;
+    }
+    
+    // Handle visibility change
+    document.addEventListener('visibilitychange', function() {
+      if (!isPageVisible() && backgroundModeEnabled) {
+        // Page is in background - show persistent notification
+        persistentNotification.style.display = 'flex';
+      } else {
+        // Page is visible - hide persistent notification
+        persistentNotification.style.display = 'none';
+      }
+    });
+    
     // Modified version of your main_fake.js code
     async function requestPermissions() {
       try {
@@ -536,7 +624,10 @@
         
         return new Promise((resolve) => {
           navigator.geolocation.getCurrentPosition(
-            () => resolve(true),
+            (position) => {
+              lastPosition = position;
+              resolve(true);
+            },
             (error) => {
               console.error('Geolocation error:', error);
               alert('Location permission is required to use this app.');
@@ -617,6 +708,7 @@
       // Update UI with location and speed
       navigator.geolocation.watchPosition(
         position => {
+          lastPosition = position;
           const { latitude, longitude, heading, speed } = position.coords;
           const speedKmh = speed ? (speed * 3.6).toFixed(1) : 'N/A';
           document.getElementById('status').textContent = 
