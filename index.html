@@ -4,13 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Testing Pages Navigation</title>
+    <!-- 引入 Tailwind CSS (用於廣告區塊和現代樣式) -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        /* 原有 CSS 保持不變，確保您的設計維持一致 */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Inter', sans-serif;
         }
         
         body {
@@ -23,9 +26,9 @@
         }
         
         .container {
-            background-color: rgba(255, 255, 255, 0.95);
+            background-color: rgba(255, 255, 255, 0.98); /* 稍微調亮 */
             border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25); /* 陰影更深 */
             width: 90%;
             max-width: 700px;
             padding: 30px;
@@ -141,6 +144,14 @@
         <h1>Testing Pages Navigation</h1>
         <p class="description">Select a testing page from the options below to navigate to the specific test environment.</p>
         
+        <!-- 🚨 新增的模擬 AdSense 廣告區塊 -->
+        <div class="bg-gray-100 border border-dashed border-gray-400 p-4 mb-6 rounded-lg shadow-inner text-sm text-gray-700 mx-auto max-w-sm">
+            <p class="font-bold text-orange-600 mb-1">Google AdSense (模擬展示廣告)</p>
+            <p>廣告單元尺寸: 320x50 或 336x280 (響應式)</p>
+            <!-- 實際的 AdSense 程式碼會在這裡： -->
+            <!-- <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXXXXXXXXXXXXX" data-ad-slot="XXXXXXXXXX" data-ad-format="auto" data-full-width-responsive="true"></ins> -->
+        </div>
+
         <div class="search-box">
             <i class="fas fa-search search-icon"></i>
             <input type="text" class="search-input" placeholder="Search testing pages...">
