@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <title>WebTrans 128 (Simutrans Lite)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #222; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #gameCanvas { display: block; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; }
+        
+        /* UI 面板樣式 */
+        .panel { 
+            pointer-events: auto; 
+            background: rgba(240, 240, 240, 0.95); 
+            padding: 10px; 
+            border: 2px solid #555; 
+            border-radius: 4px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            margin: 10px;
+            display: inline-block;
+        }
+        button {
+            background: #ddd; border: 1px solid #888; padding: 5px 10px; cursor: pointer; margin-right: 5px;
+        }
+        button:hover { background: #fff; }
+        button.active { background: #aaf; border-color: #005; font-weight: bold; }
+        
+        h1 { margin: 0 0 10px 0; font-size: 16px; color: #333; }
+        .status-bar { position: absolute; bottom: 10px; left: 10px; color: white; text-shadow: 1px 1px 0 #000; }
+        
+        /* 路線列表 */
+        #route-panel { position: absolute; right: 0; top: 0; width: 250px; height: 80vh; overflow-y: auto; display: none; }
+        .route-item { background: #fff; border: 1px solid #ccc; margin-bottom: 5px; padding: 5px; }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div class="panel">
+            <h1>WebTrans 128</h1>
+            <div style="margin-bottom: 5px;">
+                <button id="btn-inspect" class="active">🔍 檢視</button>
+                <button id="btn-road">🛣️ 道路 (自動)</button>
+                <button id="btn-stop">🚏 巴士站</button>
+            </div>
+            <div style="border-top: 1px solid #ccc; padding-top: 5px;">
+                <button id="btn-routes">📋 管理路線</button>
+                <button id="btn-save">💾 存檔</button>
+                <button id="btn-load">📂 讀檔</button>
+                <button id="btn-reset" style="color:red">❌ 重置</button>
+            </div>
+        </div>
+
+        <div id="route-panel" class="panel">
+            <h1>路線管理</h1>
+            <button id="btn-new-route" style="width:100%; margin-bottom:10px;">+ 新增路線</button>
+            <div id="route-list"></div>
+            <button onclick="document.getElementById('route-panel').style.display='none'" style="margin-top:10px;">關閉</button>
+        </div>
+    </div>
+
+    <div class="status-bar" id="status-bar">準備就緒</div>
+
+<script>
+/**
+ * WebTrans 128 - 核心邏輯
+ * 包含：地圖渲染(等距視角), 簡單路徑移動, 存檔系統
+ */
+
+// --- 設定與常數 ---
+const TILE_WIDTH = 64;  // 模擬 Pak128 的一半大小以適應網頁
+const TILE_HEIGHT = 32;
+const MAP_SIZE = 32;    // 地圖大小 32x32 格
+
+// 瓦片類型
+const TILE = {
+    GRASS: 0,
+    ROAD: 1,
+    HOUSE: 2,
+    STOP: 3
+};
+
+// 遊戲狀態
+let state = {
+    map: [],        // 二維陣列儲存地圖
+    structures: [], // 額外結構資料 (如站牌歸屬)
+    routes: [],     // 路線列表: {id, name, stops: [{x,y},...], buses: []}
+    money: 10000,
+    camera: { x: 0, y: 0 }
+};
+
+let vehicles = []; // 運行中的車輛 (不存入 localStorage 的靜態部分，需重建)
+let currentTool = 'inspect';
+let isDragging = false;
+let lastMouse = { x: 0, y: 0 };
+let selectedRouteId = null;
+
+// --- 初始化 ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// 初始化地圖
+function initMap() {
+    state.map = [];
+    state.structures = [];
+    for (let y = 0; y < MAP_SIZE; y++) {
+        let row = [];
+        let structRow = [];
+        for (let x = 0; x < MAP_SIZE; x++) {
+            // 簡單的城市生成邏輯：中心區域有房子
+            let dist = Math.sqrt((x-MAP_SIZE/2)**2 + (y-MAP_SIZE/2)**2);
+            let isCity = dist < 8 && Math.random() > 0.3;
+            
+            if (isCity) {
+                row.push(TILE.HOUSE);
+            } else {
+                row.push(TILE.GRASS);
+            }
+            structRow.push(null);
+        }
+        state.map.push(row);
+        state.structures.push(structRow);
+    }
+    // 初始相機位置置中
+    state.camera.x = window.innerWidth / 2;
+    state.camera.y = 100;
+}
+
+// --- 核心渲染 (Isometric Engine) ---
+
+// 網格座標 -> 螢幕座標
+function isoToScreen(x, y) {
+    return {
+        x: (x - y) * TILE_WIDTH / 2 + state.camera.x,
+        y: (x + y) * TILE_HEIGHT / 2 + state.camera.y
+    };
+}
+
+// 螢幕座標 -> 網格座標 (粗略反推，用於滑鼠點擊)
+function screenToIso(sx, sy) {
+    let adjX = sx - state.camera.x;
+    let adjY = sy - state.camera.y;
+    let yy = (adjY / (TILE_HEIGHT/2) - adjX / (TILE_WIDTH/2)) / 2;
+    let xx = (adjY / (TILE_HEIGHT/2) + adjX / (TILE_WIDTH/2)) / 2;
+    return { x: Math.floor(xx), y: Math.floor(yy) };
+}
+
+function drawMap() {
+    // 清空畫布
+    ctx.fillStyle = '#222';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 繪製順序：從上到下，從左到右，確保遮擋關係正確
+    for (let y = 0; y < MAP_SIZE; y++) {
+        for (let x = 0; x < MAP_SIZE; x++) {
+            const pos = isoToScreen(x, y);
+            
+            // 簡單的可見性剔除
+            if (pos.x < -100 || pos.x > canvas.width + 100 || pos.y < -100 || pos.y > canvas.height + 100) continue;
+
+            drawTile(ctx, pos.x, pos.y, state.map[y][x]);
+            
+            // 繪製高亮選框
+            if (hoverTile.x === x && hoverTile.y === y) {
+                ctx.strokeStyle = 'yellow';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+                ctx.lineTo(pos.x + TILE_WIDTH/2, pos.y + TILE_HEIGHT/2);
+                ctx.lineTo(pos.x, pos.y + TILE_HEIGHT);
+                ctx.lineTo(pos.x - TILE_WIDTH/2, pos.y + TILE_HEIGHT/2);
+                ctx.closePath();
+                ctx.stroke();
+            }
+        }
+    }
+
+    // 繪製車輛 (在瓦片之後，模擬高度)
+    vehicles.forEach(bus => {
+        const pos = isoToScreen(bus.x, bus.y);
+        // 簡單的巴士圖形
+        ctx.fillStyle = '#3498db'; // 藍色巴士
+        ctx.fillRect(pos.x - 10, pos.y - 10, 20, 15);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(bus.lineName, pos.x - 10, pos.y - 15);
+    });
+}
+
+// 繪製單個瓦片 (這裡用顏色代替 Pak128 圖片)
+function drawTile(c, x, y, type) {
+    c.beginPath();
+    c.moveTo(x, y);
+    c.lineTo(x + TILE_WIDTH / 2, y + TILE_HEIGHT / 2);
+    c.lineTo(x, y + TILE_HEIGHT);
+    c.lineTo(x - TILE_WIDTH / 2, y + TILE_HEIGHT / 2);
+    c.closePath();
+
+    switch (type) {
+        case TILE.GRASS: c.fillStyle = '#4CAF50'; break; // 綠色
+        case TILE.ROAD:  c.fillStyle = '#7f8c8d'; break; // 灰色
+        case TILE.HOUSE: c.fillStyle = '#e67e22'; break; // 橙色 (地基)
+        case TILE.STOP:  c.fillStyle = '#f1c40f'; break; // 黃色
+    }
+    c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.1)';
+    c.stroke();
+
+    // 如果是房子，畫個立體方塊
+    if (type === TILE.HOUSE) {
+        c.fillStyle = '#d35400';
+        c.fillRect(x - 10, y - 25, 20, 25); // 簡單垂直拉伸
+    }
+    // 如果是站牌
+    if (type === TILE.STOP) {
+        c.fillStyle = 'red';
+        c.fillRect(x - 5, y - 20, 10, 20);
+        c.fillStyle = 'white';
+        c.fillText("BUS", x - 10, y - 25);
+    }
+}
+
+// --- 邏輯系統 ---
+
+let hoverTile = { x: -1, y: -1 };
+
+// 輸入處理
+canvas.addEventListener('mousedown', e => {
+    if (e.button === 0) { // 左鍵
+        if (currentTool === 'inspect') {
+            isDragging = true;
+            lastMouse = { x: e.clientX, y: e.clientY };
+        } else {
+            handleToolClick();
+        }
+    }
+});
+
+canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    // 更新滑鼠懸停的格子
+    hoverTile = screenToIso(mouseX, mouseY);
+
+    // 拖動地圖
+    if (isDragging) {
+        state.camera.x += e.clientX - lastMouse.x;
+        state.camera.y += e.clientY - lastMouse.y;
+        lastMouse = { x: e.clientX, y: e.clientY };
+    }
+});
+
+canvas.addEventListener('mouseup', () => isDragging = false);
+
+function handleToolClick() {
+    const { x, y } = hoverTile;
+    if (x < 0 || x >= MAP_SIZE || y < 0 || y >= MAP_SIZE) return;
+
+    if (currentTool === 'road') {
+        // 如果是草地或房子，變成路
+        state.map[y][x] = TILE.ROAD;
+    } else if (currentTool === 'stop') {
+        // 必須建在路旁或路上 (這裡簡化為直接把該格變成站牌)
+        state.map[y][x] = TILE.STOP;
+        // 給這個站牌一個 ID，方便路線連結
+        if (!state.structures[y][x]) {
+            state.structures[y][x] = { id: Date.now(), name: `車站 ${x},${y}` };
+        }
+    }
+    updateStatus(`操作完成於 ${x},${y}`);
+}
+
+// --- 巴士與路線系統 ---
+
+// 更新車輛位置
+function updateVehicles(dt) {
+    vehicles.forEach(bus => {
+        if (!bus.active) return;
+
+        const route = state.routes.find(r => r.id === bus.routeId);
+        if (!route || route.stops.length < 2) return;
+
+        const targetStop = route.stops[bus.targetStopIndex];
+        
+        // 簡單的直線移動邏輯 (不進行複雜尋路)
+        const dx = targetStop.x - bus.x;
+        const dy = targetStop.y - bus.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist < 0.1) {
+            // 到站
+            bus.targetStopIndex = (bus.targetStopIndex + 1) % route.stops.length;
+        } else {
+            // 移動 (速度 0.05 格/幀)
+            bus.x += (dx / dist) * 0.05;
+            bus.y += (dy / dist) * 0.05;
+        }
+    });
+}
+
+// --- UI 交互 ---
+
+const tools = ['inspect', 'road', 'stop'];
+tools.forEach(t => {
+    document.getElementById(`btn-${t}`).addEventListener('click', (e) => {
+        currentTool = t;
+        updateUIButtons();
+        updateStatus(`工具: ${e.target.innerText}`);
+    });
+});
+
+function updateUIButtons() {
+    tools.forEach(t => {
+        const el = document.getElementById(`btn-${t}`);
+        if (t === currentTool) el.classList.add('active');
+        else el.classList.remove('active');
+    });
+}
+
+// 路線管理器
+document.getElementById('btn-routes').addEventListener('click', () => {
+    renderRouteList();
+    document.getElementById('route-panel').style.display = 'block';
+});
+
+document.getElementById('btn-new-route').addEventListener('click', () => {
+    const newRoute = {
+        id: Date.now(),
+        name: `路線 ${state.routes.length + 1}`,
+        stops: []
+    };
+    state.routes.push(newRoute);
+    renderRouteList();
+});
+
+function renderRouteList() {
+    const list = document.getElementById('route-list');
+    list.innerHTML = '';
+    state.routes.forEach(route => {
+        const div = document.createElement('div');
+        div.className = 'route-item';
+        div.innerHTML = `
+            <strong>${route.name}</strong> (${route.stops.length} 站)<br>
+            <small>車輛: ${vehicles.filter(v => v.routeId === route.id).length}</small><br>
+            <button onclick="editRoute(${route.id})">編輯站點</button>
+            <button onclick="addBus(${route.id})">購買巴士</button>
+            <button onclick="deleteRoute(${route.id})" style="color:red">刪除</button>
+        `;
+        list.appendChild(div);
+    });
+}
+
+window.editRoute = (id) => {
+    selectedRouteId = id;
+    const route = state.routes.find(r => r.id === id);
+    alert(`正在編輯 "${route.name}"。\n請在地圖上點擊 "巴士站" 來加入此路線。`);
+    
+    // 覆蓋點擊行為來選取站點
+    const originalTool = currentTool;
+    currentTool = 'selecting_stops';
+    
+    // 臨時的點擊處理器
+    const handler = (e) => {
+        if (currentTool !== 'selecting_stops') {
+            canvas.removeEventListener('mousedown', handler);
+            return;
+        }
+        if (e.button !== 0) return;
+        
+        const {x, y} = hoverTile;
+        if (x >= 0 && x < MAP_SIZE && y >= 0 && y < MAP_SIZE) {
+            if (state.map[y][x] === TILE.STOP) {
+                route.stops.push({x, y});
+                updateStatus(`已加入站點: ${x},${y}`);
+            } else {
+                updateStatus("這不是巴士站！");
+            }
+        }
+    };
+    canvas.addEventListener('mousedown', handler);
+};
+
+window.addBus = (routeId) => {
+    const route = state.routes.find(r => r.id === routeId);
+    if (route.stops.length < 2) {
+        alert("路線至少需要 2 個站點才能運行！");
+        return;
+    }
+    
+    // 建立新車輛
+    const startStop = route.stops[0];
+    const bus = {
+        id: Date.now(),
+        routeId: routeId,
+        lineName: route.name,
+        x: startStop.x,
+        y: startStop.y,
+        targetStopIndex: 1,
+        active: true
+    };
+    vehicles.push(bus);
+    renderRouteList();
+    updateStatus("巴士已購買並發車！");
+};
+
+window.deleteRoute = (id) => {
+    if(confirm("確定刪除?")) {
+        state.routes = state.routes.filter(r => r.id !== id);
+        vehicles = vehicles.filter(v => v.routeId !== id); // 移除該路線的車
+        renderRouteList();
+    }
+};
+
+// --- 存檔與讀檔 ---
+
+document.getElementById('btn-save').addEventListener('click', () => {
+    const saveData = {
+        state: state,
+        vehicles: vehicles // 簡單存儲車輛狀態
+    };
+    localStorage.setItem('webtrans128_save', JSON.stringify(saveData));
+    alert('遊戲已存檔！');
+});
+
+document.getElementById('btn-load').addEventListener('click', () => {
+    const data = localStorage.getItem('webtrans128_save');
+    if (data) {
+        const parsed = JSON.parse(data);
+        state = parsed.state;
+        vehicles = parsed.vehicles;
+        // 確保原型鏈或圖像加載（此處無）
+        updateStatus("存檔已讀取");
+    } else {
+        alert("找不到存檔！");
+    }
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+    if(confirm("確定重置地圖？")) {
+        localStorage.removeItem('webtrans128_save');
+        location.reload();
+    }
+});
+
+function updateStatus(msg) {
+    document.getElementById('status-bar').innerText = msg;
+}
+
+// --- 遊戲主迴圈 ---
+function loop() {
+    updateVehicles();
+    drawMap();
+    requestAnimationFrame(loop);
+}
+
+// 啟動
+initMap();
+loop();
+
+</script>
+</body>
+</html>
