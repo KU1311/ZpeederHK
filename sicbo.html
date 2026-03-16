@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>骰寶策略工具 Pro</title>
+    <title>骰寶策略工具 Pro - 全覽版</title>
     <style>
         :root {
             --casino-green: #1a472a;
@@ -23,31 +23,40 @@
             height: 100vh;
             height: -webkit-fill-available;
         }
-        /* 上部：加長的統計與路紙 */
-        .top-panel {
-            display: flex;
-            height: 180px; /* 拉長統計區 */
+
+        /* 頂部：重新設計的統計區 (不再擁擠) */
+        .info-panel {
             background: #072b16;
             border-bottom: 2px solid var(--gold);
-            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            height: 240px; /* 大幅增加高度 */
         }
         #roadMap {
             flex: 1;
             padding: 8px;
-            overflow-y: auto;
-            border-right: 1px solid #333;
-            line-height: 1.6;
+            overflow-x: auto;
+            white-space: nowrap; /* 路紙改為橫向橫排，節省空間 */
+            border-bottom: 1px solid #333;
+            font-size: 11px;
             color: #ccc;
         }
         #statsPanel {
-            flex: 1.2;
+            flex: 2;
             padding: 8px;
             background: #051d0f;
-            line-height: 1.5;
-            overflow-y: auto; /* 確保單骰 stat 能滑動看全 */
+            display: grid;
+            grid-template-columns: 1fr 1.5fr; /* 左邊大/小，右邊單骰 */
+            gap: 10px;
+            font-size: 13px;
+        }
+        .single-stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr; /* 單骰統計排成兩列，確保不需 scroll */
+            gap: 2px 10px;
         }
 
-        /* 中部：核心遊戲區 */
+        /* 中部：遊戲核心 */
         .main-game {
             flex: 1;
             background: var(--casino-green);
@@ -58,35 +67,32 @@
             padding: 10px;
         }
         .dice-display {
-            font-size: 60px; /* 大圖案 */
+            font-size: 55px;
             color: var(--gold);
             background: rgba(0,0,0,0.6);
-            padding: 5px 30px;
-            border-radius: 20px;
-            box-shadow: 0 0 20px rgba(255,215,0,0.2);
-            min-height: 100px;
+            padding: 10px 25px;
+            border-radius: 15px;
+            min-height: 90px;
             display: flex;
             align-items: center;
         }
 
-        /* 投注區佈局 */
+        /* 下注區 */
         .bet-grid-main {
             display: grid;
-            grid-template-columns: 1fr 0.8fr 1fr; /* 三行佈局：小 - 圍 - 大 */
+            grid-template-columns: 1fr 0.8fr 1fr;
             gap: 8px;
             width: 100%;
             max-width: 400px;
         }
         .btn-main {
-            padding: 15px 0;
+            padding: 12px 0;
             font-size: 16px;
             font-weight: bold;
             border: 1px solid rgba(255,255,255,0.3);
             border-radius: 10px;
             color: white;
         }
-        .btn-triple { background: var(--purple); font-size: 14px; }
-
         .single-grid {
             display: grid;
             grid-template-columns: repeat(6, 1fr);
@@ -98,63 +104,55 @@
             background: #333;
             border: 1px solid #555;
             color: white;
-            padding: 12px 0;
+            padding: 8px 0;
             border-radius: 6px;
             font-size: 14px;
         }
 
-        /* 控制按鈕 */
+        /* 控制區 */
         .control-area {
             width: 100%;
             max-width: 400px;
             display: flex;
-            gap: 10px;
+            gap: 8px;
         }
         .roll-btn {
             flex: 2;
             background: var(--gold);
             color: #000;
-            font-size: 22px;
+            font-size: 20px;
             font-weight: 900;
-            padding: 15px;
-            border-radius: 12px;
+            padding: 12px;
+            border-radius: 10px;
             border: none;
-            box-shadow: 0 5px 0 #b89b00;
+            box-shadow: 0 4px 0 #b89b00;
         }
-        .roll-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #b89b00; }
-        .clear-btn {
-            flex: 1;
-            background: #444;
-            color: white;
-            border-radius: 12px;
-            border: none;
-        }
+        .clear-btn { flex: 1; background: #444; color: white; border-radius: 10px; border: none; }
 
         .footer-bar {
             background: #111;
-            padding: 15px;
+            padding: 10px 20px;
             display: flex;
             justify-content: space-between;
-            font-size: 15px;
-            border-top: 1px solid #333;
+            font-size: 14px;
         }
     </style>
 </head>
 <body>
 
-<div class="top-panel">
+<div class="info-panel">
     <div id="roadMap">路紙加載中...</div>
     <div id="statsPanel">統計數據加載中...</div>
 </div>
 
 <div class="main-game">
-    <div id="status" style="font-size: 15px; color: #aaa;">點擊下注或直接開蓋</div>
+    <div id="status" style="font-size: 14px; color: #aaa;">點擊下注或開蓋</div>
     <div id="diceResult" class="dice-display">⚀ ⚁ ⚂</div>
     
     <div class="bet-grid-main">
-        <button class="btn-main" style="background:var(--blue)" onclick="addBet('小')">小 1:1<br><span id="bet-小">$0</span></button>
-        <button class="btn-main btn-triple" onclick="addBet('圍')">全圍 1:24<br><span id="bet-圍">$0</span></button>
-        <button class="btn-main" style="background:var(--red)" onclick="addBet('大')">大 1:1<br><span id="bet-大">$0</span></button>
+        <button class="btn-main" style="background:var(--blue)" onclick="addBet('小')">小<br><span id="bet-小">$0</span></button>
+        <button class="btn-main" style="background:var(--purple)" onclick="addBet('圍')">全圍 1:24<br><span id="bet-圍">$0</span></button>
+        <button class="btn-main" style="background:var(--red)" onclick="addBet('大')">大<br><span id="bet-大">$0</span></button>
     </div>
 
     <div class="single-grid" id="singleContainer"></div>
@@ -202,24 +200,29 @@
         document.getElementById('bet-圍').innerText = `$${bets['圍']}`;
         for(let i=1; i<=6; i++) document.getElementById(`bet-${i}`).innerText = `$${bets[i]}`;
 
-        // 更新路紙
-        let road = "<b>最近 15 鋪:</b><br>";
-        history.slice(-15).reverse().forEach(r => {
-            let color = r.trip ? "#ff00ff" : (r.size==='大'?'#ff7a7a':'#7abaff');
-            road += `<span style="color:${color}">${r.size}</span> ${r.total.toString().padStart(2,'0')}點 [${r.d}]<br>`;
+        // 路紙：橫向排列，顯示更多
+        let roadHtml = "<b>最近路紙: </b> ";
+        history.slice(-12).forEach(r => {
+            let color = r.trip ? "var(--gold)" : (r.size==='大'?'#ff7a7a':'#7abaff');
+            roadHtml += `<span style="color:${color}; margin-right:8px;">${r.size}${r.total}</span>`;
         });
-        document.getElementById('roadMap').innerHTML = road;
+        document.getElementById('roadMap').innerHTML = roadHtml;
 
-        // 更新統計 (含滾動支持)
+        // 統計：分兩欄顯示，徹底解決 scroll 問題
         let b = history.filter(r=>r.size==='大').length;
         let s = history.filter(r=>r.size==='小').length;
         let t = history.filter(r=>r.size==='圍').length;
         let dC = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0};
         history.forEach(r => r.d.forEach(x => dC[x]++));
+
+        let mainStats = `<div><b>200鋪概況</b><br>大: ${(b/2).toFixed(1)}%<br>小: ${(s/2).toFixed(1)}%<br>圍: ${(t/2).toFixed(1)}%</div>`;
+        let diceStats = `<div class="single-stat-grid">`;
+        for(let i=1; i<=6; i++) {
+            diceStats += `<div>${diceIcons[i]}${i}: ${(dC[i]/600*100).toFixed(1)}%</div>`;
+        }
+        diceStats += `</div>`;
         
-        let stats = `<b>200鋪統計:</b><br>大: ${(b/2).toFixed(1)}% | 小: ${(s/2).toFixed(1)}%<br>圍: ${(t/2).toFixed(1)}%<br>--- 單骰頻率 ---<br>`;
-        for(let i=1; i<=6; i++) stats += `${diceIcons[i]} ${i}點: ${dC[i]}次 (${(dC[i]/600*100).toFixed(1)}%)<br>`;
-        document.getElementById('statsPanel').innerHTML = stats;
+        document.getElementById('statsPanel').innerHTML = mainStats + `<div><b>單骰頻率</b>${diceStats}</div>`;
     }
 
     function addBet(a) {
@@ -234,36 +237,22 @@
 
     function playRound() {
         let res = roll();
-        // 顯示漂亮的 Unicode 骰子
         document.getElementById('diceResult').innerText = res.d.map(x => diceIcons[x]).join(" ");
-        
         let win = 0;
-        // 判定大小
         if(!res.trip) {
             if(res.size==='大') win += bets['大']*2;
             if(res.size==='小') win += bets['小']*2;
         }
-        // 判定全圍 (1:24)
-        if(res.trip) {
-            win += bets['圍'] * 25; // 賠24倍+退本金
-        }
-        // 判定單骰
+        if(res.trip) win += bets['圍'] * 25;
         for(let i=1; i<=6; i++) {
             let c = res.d.filter(x=>x===i).length;
             if(c>0) win += bets[i] + (bets[i]*c);
         }
-
         balance += win;
         let betPlaced = Object.values(bets).some(v => v > 0);
         for(let a in bets) bets[a] = 0;
-        
-        if(betPlaced) {
-            document.getElementById('status').innerText = `開獎: ${res.total}點 ${res.size} | 派彩: $${win}`;
-            document.getElementById('status').style.color = win > 0 ? "var(--gold)" : "#ff7a7a";
-        } else {
-            document.getElementById('status').innerText = `開獎: ${res.total}點 ${res.size}`;
-            document.getElementById('status').style.color = "#aaa";
-        }
+        document.getElementById('status').innerText = betPlaced ? `結果: ${res.total}點 ${res.size} | 派彩: $${win}` : `開獎: ${res.total}點 ${res.size}`;
+        document.getElementById('status').style.color = win > 0 ? "var(--gold)" : (betPlaced ? "#ff7a7a" : "#aaa");
         update();
     }
 
