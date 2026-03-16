@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>骰寶策略工具 Pro - 全覽版</title>
+    <title>骰寶策略工具 Pro</title>
     <style>
         :root {
             --casino-green: #1a472a;
@@ -24,39 +24,40 @@
             height: -webkit-fill-available;
         }
 
-        /* 頂部：重新設計的統計區 (不再擁擠) */
+        /* 頂部區域：左路紙，右統計 */
         .info-panel {
             background: #072b16;
             border-bottom: 2px solid var(--gold);
             display: flex;
-            flex-direction: column;
-            height: 240px; /* 大幅增加高度 */
+            height: 220px; /* 固定高度確保下方空間 */
         }
         #roadMap {
             flex: 1;
-            padding: 8px;
-            overflow-x: auto;
-            white-space: nowrap; /* 路紙改為橫向橫排，節省空間 */
-            border-bottom: 1px solid #333;
-            font-size: 11px;
-            color: #ccc;
+            padding: 10px 5px;
+            overflow-y: auto;
+            border-right: 1px solid #333;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #ddd;
         }
         #statsPanel {
-            flex: 2;
-            padding: 8px;
+            flex: 1.2;
+            padding: 10px 8px;
             background: #051d0f;
-            display: grid;
-            grid-template-columns: 1fr 1.5fr; /* 左邊大/小，右邊單骰 */
-            gap: 10px;
-            font-size: 13px;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
         }
-        .single-stat-grid {
+        .stat-section { margin-bottom: 8px; }
+        .single-grid-stats {
             display: grid;
-            grid-template-columns: 1fr 1fr; /* 單骰統計排成兩列，確保不需 scroll */
-            gap: 2px 10px;
+            grid-template-columns: 1fr; /* 單列垂直排開，字體縮小確保不需捲動 */
+            gap: 2px;
+            margin-top: 5px;
         }
 
-        /* 中部：遊戲核心 */
+        /* 中部：核心遊戲區 */
         .main-game {
             flex: 1;
             background: var(--casino-green);
@@ -67,17 +68,17 @@
             padding: 10px;
         }
         .dice-display {
-            font-size: 55px;
+            font-size: 50px;
             color: var(--gold);
             background: rgba(0,0,0,0.6);
-            padding: 10px 25px;
+            padding: 8px 25px;
             border-radius: 15px;
-            min-height: 90px;
+            min-height: 85px;
             display: flex;
             align-items: center;
         }
 
-        /* 下注區 */
+        /* 投注區 */
         .bet-grid-main {
             display: grid;
             grid-template-columns: 1fr 0.8fr 1fr;
@@ -86,7 +87,7 @@
             max-width: 400px;
         }
         .btn-main {
-            padding: 12px 0;
+            padding: 15px 0;
             font-size: 16px;
             font-weight: bold;
             border: 1px solid rgba(255,255,255,0.3);
@@ -104,7 +105,7 @@
             background: #333;
             border: 1px solid #555;
             color: white;
-            padding: 8px 0;
+            padding: 10px 0;
             border-radius: 6px;
             font-size: 14px;
         }
@@ -114,7 +115,7 @@
             width: 100%;
             max-width: 400px;
             display: flex;
-            gap: 8px;
+            gap: 10px;
         }
         .roll-btn {
             flex: 2;
@@ -122,16 +123,16 @@
             color: #000;
             font-size: 20px;
             font-weight: 900;
-            padding: 12px;
-            border-radius: 10px;
+            padding: 15px;
+            border-radius: 12px;
             border: none;
             box-shadow: 0 4px 0 #b89b00;
         }
-        .clear-btn { flex: 1; background: #444; color: white; border-radius: 10px; border: none; }
+        .clear-btn { flex: 1; background: #444; color: white; border-radius: 12px; border: none; }
 
         .footer-bar {
             background: #111;
-            padding: 10px 20px;
+            padding: 12px 20px;
             display: flex;
             justify-content: space-between;
             font-size: 14px;
@@ -190,6 +191,7 @@
         return res;
     }
 
+    // 初始預熱
     for(let i=0; i<200; i++) roll();
 
     function update() {
@@ -200,29 +202,35 @@
         document.getElementById('bet-圍').innerText = `$${bets['圍']}`;
         for(let i=1; i<=6; i++) document.getElementById(`bet-${i}`).innerText = `$${bets[i]}`;
 
-        // 路紙：橫向排列，顯示更多
-        let roadHtml = "<b>最近路紙: </b> ";
-        history.slice(-12).forEach(r => {
+        // 路紙：維持打直排列 (顯示最近12鋪)
+        let roadHtml = "<b>路紙 (直向):</b><br>";
+        history.slice(-12).reverse().forEach(r => {
             let color = r.trip ? "var(--gold)" : (r.size==='大'?'#ff7a7a':'#7abaff');
-            roadHtml += `<span style="color:${color}; margin-right:8px;">${r.size}${r.total}</span>`;
+            roadHtml += `<span style="color:${color}">${r.size} ${r.total}點 [${r.d}]</span><br>`;
         });
         document.getElementById('roadMap').innerHTML = roadHtml;
 
-        // 統計：分兩欄顯示，徹底解決 scroll 問題
+        // 統計：右側分段顯示
         let b = history.filter(r=>r.size==='大').length;
         let s = history.filter(r=>r.size==='小').length;
         let t = history.filter(r=>r.size==='圍').length;
         let dC = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0};
         history.forEach(r => r.d.forEach(x => dC[x]++));
 
-        let mainStats = `<div><b>200鋪概況</b><br>大: ${(b/2).toFixed(1)}%<br>小: ${(s/2).toFixed(1)}%<br>圍: ${(t/2).toFixed(1)}%</div>`;
-        let diceStats = `<div class="single-stat-grid">`;
-        for(let i=1; i<=6; i++) {
-            diceStats += `<div>${diceIcons[i]}${i}: ${(dC[i]/600*100).toFixed(1)}%</div>`;
-        }
-        diceStats += `</div>`;
-        
-        document.getElementById('statsPanel').innerHTML = mainStats + `<div><b>單骰頻率</b>${diceStats}</div>`;
+        let statHtml = `
+            <div class="stat-section">
+                <b>200鋪概況:</b><br>
+                大: ${(b/2).toFixed(1)}% | 小: ${(s/2).toFixed(1)}%<br>
+                圍: ${(t/2).toFixed(1)}%
+            </div>
+            <div class="stat-section">
+                <b>單骰頻率:</b>
+                <div class="single-grid-stats">
+                    ${[1,2,3,4,5,6].map(i => `<div>${diceIcons[i]}${i}: ${(dC[i]/600*100).toFixed(1)}% (${dC[i]}次)</div>`).join('')}
+                </div>
+            </div>
+        `;
+        document.getElementById('statsPanel').innerHTML = statHtml;
     }
 
     function addBet(a) {
