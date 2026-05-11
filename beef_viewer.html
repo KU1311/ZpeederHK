@@ -3,66 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZpeederHK - 違停強度動態地圖</title>
+    <title>ZpeederHK - 違停機率動態地圖</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
-        #map { height: 100vh; width: 100%; }
+        body { margin: 0; padding: 0; font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; background: #f4f4f7; }
+        #map { height: 100vh; width: 100%; z-index: 1; }
         
-        /* 控制面板樣式 */
+        /* 控制面板 */
         .control-panel {
             position: absolute; top: 20px; right: 20px; z-index: 1000;
-            background: white; padding: 15px; border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2); width: 250px;
+            background: white; padding: 20px; border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15); width: 280px;
         }
-        select, input { width: 100%; margin: 10px 0; padding: 5px; }
-        .legend {
-            line-height: 18px; color: #555; background: white;
-            padding: 10px; border-radius: 5px; box-shadow: 0 0 15px rgba(0,0,0,0.2);
+        h3 { margin-top: 0; color: #333; font-size: 18px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        label { display: block; margin-top: 15px; font-weight: bold; color: #666; font-size: 13px; }
+        select, input[type="range"] { width: 100%; margin: 10px 0; }
+        
+        .btn-update {
+            margin-top: 20px; width: 100%; cursor: pointer; background: #2c3e50; 
+            color: white; border: none; padding: 12px; border-radius: 6px; 
+            font-size: 15px; font-weight: bold; transition: background 0.3s;
         }
-        .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
-        #loading {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            z-index: 2000; background: rgba(255,255,255,0.8); padding: 20px;
-            border-radius: 10px; display: none;
-        }
+        .btn-update:hover { background: #34495e; }
 
+        /* 進度條樣式 */
         #progress-container {
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-            width: 300px; background: rgba(0,0,0,0.7); border-radius: 20px;
-            padding: 10px; z-index: 2000; display: none;
+            width: 320px; background: rgba(0,0,0,0.8); border-radius: 25px;
+            padding: 12px 20px; z-index: 2000; display: none;
         }
-        #progress-bar {
-            height: 10px; width: 0%; background: #00ff00; border-radius: 5px;
-            transition: width 0.3s;
-        }
-        #progress-text { color: white; text-align: center; font-size: 12px; margin-top: 5px; }
+        #progress-bar-bg { width: 100%; background: #444; height: 8px; border-radius: 4px; overflow: hidden; }
+        #progress-bar-fill { height: 100%; width: 0%; background: #00ff00; transition: width 0.2s; }
+        #progress-text { color: white; text-align: center; font-size: 12px; margin-top: 8px; font-family: monospace; }
         
-        .popup-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
-        .popup-table th, .popup-table td { border-bottom: 1px solid #eee; padding: 4px; text-align: left; }
-        .score-high { color: #800026; font-weight: bold; }
+        /* Popup 表格 */
+        .popup-container { min-width: 200px; }
+        .popup-title { font-size: 16px; font-weight: bold; margin-bottom: 5px; color: #2c3e50; }
+        .popup-score { font-size: 20px; color: #e74c3c; font-weight: bold; margin-bottom: 10px; }
+        .popup-table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+        .popup-table th, .popup-table td { text-align: left; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 12px; }
+        .popup-table th { color: #888; font-weight: normal; }
+        
+        /* 圖例 */
+        .legend {
+            background: white; padding: 10px; border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1); line-height: 18px; color: #555;
+        }
+        .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.8; border-radius: 2px; }
     </style>
 </head>
 <body>
 
-<div id="loading">⏳ 正在載入地理數據...</div>
+<div id="progress-container">
+    <div id="progress-bar-bg"><div id="progress-bar-fill"></div></div>
+    <div id="progress-text">準備下載...</div>
+</div>
 
 <div class="control-panel">
-    <h3>🔍 參數篩選</h3>
-    <label>選擇日子類型：</label>
+    <h3>🚗 違停機率查詢</h3>
+    
+    <label>日子類型</label>
     <select id="dayType">
-        <option value="Weekday">Weekday (平日)</option>
-        <option value="Sat">Sat (週六)</option>
-        <option value="Sun">Sun (週日)</option>
+        <option value="Weekday">平日 (Weekday)</option>
+        <option value="Sat">星期六 (Sat)</option>
+        <option value="Sun">星期日 (Sun)</option>
     </select>
 
-    <label>選擇時間 (小時)：</label>
-    <input type="range" id="hourSlider" min="0" max="23" value="15" oninput="hourVal.innerText = this.value">
-    <div style="text-align: center;"><span id="hourVal">15</span>:00 (±1h)</div>
+    <label>查詢時段</label>
+    <input type="range" id="hourSlider" min="0" max="23" value="15" oninput="hourVal.innerText = this.value.padStart(2, '0')">
+    <div style="text-align: center; font-size: 18px; font-weight: bold;"><span id="hourVal">15</span>:00</div>
+    <div style="text-align: center; font-size: 11px; color: #999;">(計算結果包含前後 1 小時數據)</div>
 
-    <button onclick="loadData()" style="margin-top: 15px; width: 100%; cursor: pointer; background: #007bff; color: white; border: none; padding: 10px; border-radius: 5px;">更新地圖</button>
+    <button class="btn-update" onclick="loadData()">更新地圖數據</button>
 </div>
 
 <div id="map"></div>
@@ -71,116 +85,56 @@
 <script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
 
 <script>
-    // 初始化地圖 (以香港中心為座標)
-    const map = L.map('map').setView([22.3193, 114.1694], 13);
+    // 1. 初始化地圖
+    const map = L.map('map', { zoomControl: false }).setView([22.3193, 114.1694], 13);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // 加入底圖 (使用 CartoDB Positron 比較乾淨，方便看熱點)
+    // 使用 CartoDB 簡潔底圖
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap &copy; CARTO'
     }).addTo(map);
 
     let currentLayer = null;
 
-    // 顏色 Gradient 函數
-    function getColor(d) {
-        return d >= 80 ? '#800026' : // 極高機率 (幾乎每天)
-               d >= 60 ? '#BD0026' : // 高機率
-               d >= 40 ? '#E31A1C' : // 中機率
-               d >= 20 ? '#FC4E2A' : // 低機率
-               d > 0   ? '#FEB24C' : // 偶發
+    // 2. 機率顏色映射 (0% - 100%)
+    function getColor(p) {
+        return p >= 80 ? '#800026' :
+               p >= 60 ? '#BD0026' :
+               p >= 40 ? '#E31A1C' :
+               p >= 20 ? '#FC4E2A' :
+               p >= 5  ? '#FD8D3C' :
+               p > 0   ? '#FEB24C' :
                          '#FFEDA0';
     }
 
-    // 樣式函數
     function style(feature) {
         return {
-            weight: 4,
-            opacity: 0.8,
+            weight: 5,
+            opacity: 0.85,
             color: getColor(feature.properties.Intensity_Score),
-            lineCap: 'round',
-            lineJoin: 'round'
+            lineCap: 'round'
         };
     }
 
-    // 核心加載函數
-    async function loadData() {
-        const day = document.getElementById('dayType').value;
-        const hour = document.getElementById('hourSlider').value;
-        const loading = document.getElementById('loading');
-        
-        // 依照你的網址結構拼接
-        const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${hour}h.gpkg`;
-
-        if (currentLayer) {
-            map.removeLayer(currentLayer);
-        }
-
-        loading.style.display = 'block';
-
-        try {
-            // 使用 leaflet-geopackage 直接加載
-            currentLayer = L.geoPackageFeatureLayer([], {
-                geoPackageUrl: url,
-                layerName: 'intensity', // 你 Python 裡存的 layer 名稱
-                style: style,
-                onEachFeature: (feature, layer) => {
-                    layer.bindPopup(`
-                        <strong>街道:</strong> ${feature.properties.CHINESESTR || '未知'}<br>
-                        <strong>強度得分:</strong> ${feature.properties.Intensity_Score.toFixed(2)}
-                    `);
-                }
-            }).addTo(map);
-            
-            console.log("加載成功:", url);
-        } catch (error) {
-            console.error("加載失敗:", error);
-            alert("找不到該時段的數據檔案。");
-        } finally {
-            loading.style.display = 'none';
-        }
-    }
-
-    // 圖例
-    const legend = L.control({position: 'bottomleft'});
-    legend.onAdd = function (map) {
-        const div = L.DomUtil.create('div', 'info legend'),
-            grades = [0.1, 0.5, 1, 3, 5, 8];
-        div.innerHTML += '<b>強度分級</b><br>';
-        for (let i = 0; i < grades.length; i++) {
-            div.innerHTML +=
-                '<i style="background:' + getColor(grades[i] + 0.1) + '"></i> ' +
-                grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '<br>' : '+');
-        }
-        return div;
-    };
-    legend.addTo(map);
-
-    // 頁面加載後預先讀取一次
-    window.onload = loadData;
-
-</script>
-    
-<div id="progress-container">
-    <div id="progress-bar"></div>
-    <div id="progress-text">正在下載數據... 0%</div>
-</div>
-<script>
-    // 核心加載函數 (更新版支援進度監控)
+    // 3. 核心加載函數 (帶有進度條)
     async function loadData() {
         const day = document.getElementById('dayType').value;
         const hour = document.getElementById('hourSlider').value;
         const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${hour}h.gpkg`;
 
-        const progressBar = document.getElementById('progress-bar');
-        const progressText = document.getElementById('progress-text');
-        const progressContainer = document.getElementById('progress-container');
+        const container = document.getElementById('progress-container');
+        const bar = document.getElementById('progress-bar-fill');
+        const text = document.getElementById('progress-text');
 
         if (currentLayer) map.removeLayer(currentLayer);
-        progressContainer.style.display = 'block';
+        container.style.display = 'block';
+        bar.style.width = '0%';
 
         try {
-            // 1. 使用 Fetch 獲取數據並監控進度
+            // 使用 Fetch 監控下載進度
             const response = await fetch(url);
+            if (!response.ok) throw new Error("檔案不存在");
+
             const contentLength = response.headers.get('content-length');
             const total = parseInt(contentLength, 10);
             let loaded = 0;
@@ -190,14 +144,11 @@
                     const reader = response.body.getReader();
                     function read() {
                         reader.read().then(({done, value}) => {
-                            if (done) {
-                                controller.close();
-                                return;
-                            }
+                            if (done) { controller.close(); return; }
                             loaded += value.byteLength;
-                            const percent = Math.round((loaded / total) * 100);
-                            progressBar.style.width = percent + '%';
-                            progressText.innerText = `正在下載: ${percent}% (${(loaded/1024/1024).toFixed(1)}MB)`;
+                            const percent = total ? Math.round((loaded / total) * 100) : 0;
+                            bar.style.width = percent + '%';
+                            text.innerText = `下載中: ${percent}% (${(loaded/1024/1024).toFixed(1)}MB)`;
                             controller.enqueue(value);
                             read();
                         });
@@ -206,41 +157,62 @@
                 }
             }));
 
-            const blob = await res.blob();
-            const arrayBuffer = await blob.arrayBuffer();
+            const arrayBuffer = await (await res.blob()).arrayBuffer();
 
-            // 2. 加載 GPKG
+            // 4. 解析 GeoPackage 二進制並渲染
             currentLayer = L.geoPackageFeatureLayer([], {
                 geoPackageBinary: arrayBuffer,
                 layerName: 'intensity',
                 style: style,
                 onEachFeature: (feature, layer) => {
-                    const p = feature.properties;
-                    const breakdown = `
-                        <div style="min-width:180px">
-                            <b>${p.CHINESESTR || '未知街道'}</b><br>
-                            <span class="score-high">發生機率: ${p.Intensity_Score}%</span>
+                    const props = feature.properties;
+                    const content = `
+                        <div class="popup-container">
+                            <div class="popup-title">${props.CHINESESTR || '未知路段'}</div>
+                            <div class="popup-score">出現機率: ${props.Intensity_Score}%</div>
                             <table class="popup-table">
-                                <tr><th>來源</th><th>貢獻度</th></tr>
-                                <tr><td>📍 精確點位</td><td>${p.P_Exact}%</td></tr>
-                                <tr><td>🕸️ 網絡擴散</td><td>${p.P_Network}%</td></tr>
-                                <tr><td>🛣️ 全街平均</td><td>${p.P_Street}%</td></tr>
+                                <tr><th>來源拆解</th><th>機率貢獻</th></tr>
+                                <tr><td>📍 精確點位</td><td>${props.P_Exact}%</td></tr>
+                                <tr><td>🕸️ 網絡擴散</td><td>${props.P_Network}%</td></tr>
+                                <tr><td>🛣️ 全街平均</td><td>${props.P_Street}%</td></tr>
                             </table>
-                            <p style="font-size:10px; color:gray; margin-top:5px;">*百分比代表在樣本天數中出現的頻率</p>
+                            <p style="font-size:10px; color:#999; margin-top:10px;">
+                                *機率基於歷史該時段出現違停次數/總樣本天數
+                            </p>
                         </div>
                     `;
-                    layer.bindPopup(breakdown);
+                    layer.bindPopup(content);
                 }
             }).addTo(map);
 
-        } catch (e) {
-            console.error(e);
-            alert("加載失敗，請檢查網絡或檔案是否存在");
+        } catch (err) {
+            console.error(err);
+            alert("加載失敗: " + err.message);
         } finally {
-            setTimeout(() => { progressContainer.style.display = 'none'; }, 500);
+            setTimeout(() => { container.style.display = 'none'; }, 800);
         }
     }
+
+    // 5. 圖例控制
+    const legend = L.control({ position: 'bottomleft' });
+    legend.onAdd = function () {
+        const div = L.DomUtil.create('div', 'legend');
+        const grades = [0, 5, 20, 40, 60, 80];
+        const labels = ['<strong>發生機率</strong>'];
+
+        for (let i = 0; i < grades.length; i++) {
+            div.innerHTML +=
+                '<i style="background:' + getColor(grades[i] + 1) + '"></i> ' +
+                grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '%<br>' : '%+');
+        }
+        return div;
+    };
+    legend.addTo(map);
+
+    // 初始載入
+    window.onload = loadData;
+
 </script>
-    
+
 </body>
 </html>
