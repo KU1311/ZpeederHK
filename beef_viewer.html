@@ -28,6 +28,21 @@
             z-index: 2000; background: rgba(255,255,255,0.8); padding: 20px;
             border-radius: 10px; display: none;
         }
+
+        #progress-container {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            width: 300px; background: rgba(0,0,0,0.7); border-radius: 20px;
+            padding: 10px; z-index: 2000; display: none;
+        }
+        #progress-bar {
+            height: 10px; width: 0%; background: #00ff00; border-radius: 5px;
+            transition: width 0.3s;
+        }
+        #progress-text { color: white; text-align: center; font-size: 12px; margin-top: 5px; }
+        
+        .popup-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+        .popup-table th, .popup-table td { border-bottom: 1px solid #eee; padding: 4px; text-align: left; }
+        .score-high { color: #800026; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -144,6 +159,88 @@
     window.onload = loadData;
 
 </script>
+    
+<div id="progress-container">
+    <div id="progress-bar"></div>
+    <div id="progress-text">正在下載數據... 0%</div>
+</div>
+<script>
+    // 核心加載函數 (更新版支援進度監控)
+    async function loadData() {
+        const day = document.getElementById('dayType').value;
+        const hour = document.getElementById('hourSlider').value;
+        const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${hour}h.gpkg`;
 
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const progressContainer = document.getElementById('progress-container');
+
+        if (currentLayer) map.removeLayer(currentLayer);
+        progressContainer.style.display = 'block';
+
+        try {
+            // 1. 使用 Fetch 獲取數據並監控進度
+            const response = await fetch(url);
+            const contentLength = response.headers.get('content-length');
+            const total = parseInt(contentLength, 10);
+            let loaded = 0;
+
+            const res = new Response(new ReadableStream({
+                start(controller) {
+                    const reader = response.body.getReader();
+                    function read() {
+                        reader.read().then(({done, value}) => {
+                            if (done) {
+                                controller.close();
+                                return;
+                            }
+                            loaded += value.byteLength;
+                            const percent = Math.round((loaded / total) * 100);
+                            progressBar.style.width = percent + '%';
+                            progressText.innerText = `正在下載: ${percent}% (${(loaded/1024/1024).toFixed(1)}MB)`;
+                            controller.enqueue(value);
+                            read();
+                        });
+                    }
+                    read();
+                }
+            }));
+
+            const blob = await res.blob();
+            const arrayBuffer = await blob.arrayBuffer();
+
+            // 2. 加載 GPKG
+            currentLayer = L.geoPackageFeatureLayer([], {
+                geoPackageBinary: arrayBuffer,
+                layerName: 'intensity',
+                style: style,
+                onEachFeature: (feature, layer) => {
+                    const p = feature.properties;
+                    const breakdown = `
+                        <div style="min-width:180px">
+                            <b>${p.CHINESESTR || '未知街道'}</b><br>
+                            <span class="score-high">發生機率: ${p.Intensity_Score}%</span>
+                            <table class="popup-table">
+                                <tr><th>來源</th><th>貢獻度</th></tr>
+                                <tr><td>📍 精確點位</td><td>${p.P_Exact}%</td></tr>
+                                <tr><td>🕸️ 網絡擴散</td><td>${p.P_Network}%</td></tr>
+                                <tr><td>🛣️ 全街平均</td><td>${p.P_Street}%</td></tr>
+                            </table>
+                            <p style="font-size:10px; color:gray; margin-top:5px;">*百分比代表在樣本天數中出現的頻率</p>
+                        </div>
+                    `;
+                    layer.bindPopup(breakdown);
+                }
+            }).addTo(map);
+
+        } catch (e) {
+            console.error(e);
+            alert("加載失敗，請檢查網絡或檔案是否存在");
+        } finally {
+            setTimeout(() => { progressContainer.style.display = 'none'; }, 500);
+        }
+    }
+</script>
+    
 </body>
 </html>
