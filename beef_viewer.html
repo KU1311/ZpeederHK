@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZpeederHK - 違停強度動態地圖</title>
+    <title>ZpeederHK - 違停機率動態地圖</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -11,28 +11,34 @@
         body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
         #map { height: 100vh; width: 100%; }
         
-        /* 控制面板樣式 */
         .control-panel {
             position: absolute; top: 20px; right: 20px; z-index: 1000;
             background: white; padding: 15px; border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2); width: 250px;
         }
         select, input { width: 100%; margin: 10px 0; padding: 5px; }
+        
         .legend {
             line-height: 18px; color: #555; background: white;
             padding: 10px; border-radius: 5px; box-shadow: 0 0 15px rgba(0,0,0,0.2);
         }
         .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
+        
         #loading {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            z-index: 2000; background: rgba(255,255,255,0.8); padding: 20px;
+            z-index: 2000; background: rgba(0,0,0,0.7); color: white; padding: 20px;
             border-radius: 10px; display: none;
         }
+
+        /* Popup 表格樣式 */
+        .popup-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        .popup-table td { padding: 4px; border-bottom: 1px solid #eee; font-size: 12px; }
+        .score-val { font-weight: bold; text-align: right; }
     </style>
 </head>
 <body>
 
-<div id="loading">⏳ 正在載入地理數據...</div>
+<div id="loading">⏳ 數據加載中...</div>
 
 <div class="control-panel">
     <h3>🔍 參數篩選</h3>
@@ -43,11 +49,11 @@
         <option value="Sun">Sun (週日)</option>
     </select>
 
-    <label>選擇時間 (小時)：</label>
+    <label>選擇時間：</label>
     <input type="range" id="hourSlider" min="0" max="23" value="15" oninput="hourVal.innerText = this.value">
     <div style="text-align: center;"><span id="hourVal">15</span>:00 (±1h)</div>
 
-    <button onclick="loadData()" style="margin-top: 15px; width: 100%; cursor: pointer; background: #007bff; color: white; border: none; padding: 10px; border-radius: 5px;">更新地圖</button>
+    <button onclick="loadData()" style="margin-top: 15px; width: 100%; cursor: pointer; background: #333; color: white; border: none; padding: 10px; border-radius: 5px;">更新地圖</button>
 </div>
 
 <div id="map"></div>
@@ -56,45 +62,39 @@
 <script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
 
 <script>
-    // 初始化地圖 (以香港中心為座標)
     const map = L.map('map').setView([22.3193, 114.1694], 13);
 
-    // 加入底圖 (使用 CartoDB Positron 比較乾淨，方便看熱點)
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap &copy; CARTO'
     }).addTo(map);
 
     let currentLayer = null;
 
-    // 顏色 Gradient 函數
     function getColor(d) {
-        return d >= 80 ? '#800026' : // 極高機率 (幾乎每天)
-               d >= 60 ? '#BD0026' : // 高機率
-               d >= 40 ? '#E31A1C' : // 中機率
-               d >= 20 ? '#FC4E2A' : // 低機率
-               d > 0   ? '#FEB24C' : // 偶發
+        return d >= 80 ? '#800026' :
+               d >= 60 ? '#BD0026' :
+               d >= 40 ? '#E31A1C' :
+               d >= 20 ? '#FC4E2A' :
+               d > 0   ? '#FEB24C' :
                          '#FFEDA0';
     }
 
-    // 樣式函數
     function style(feature) {
         return {
-            weight: 4,
+            weight: 5,
             opacity: 0.8,
             color: getColor(feature.properties.Intensity_Score),
-            lineCap: 'round',
-            lineJoin: 'round'
+            lineCap: 'round'
         };
     }
 
-    // 核心加載函數
     async function loadData() {
         const day = document.getElementById('dayType').value;
         const hour = document.getElementById('hourSlider').value;
         const loading = document.getElementById('loading');
         
-        // 依照你的網址結構拼接
-        const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${hour}h.gpkg`;
+        // 加上時間戳防止緩存舊檔案
+        const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${hour}h.gpkg?v=${new Date().getTime()}`;
 
         if (currentLayer) {
             map.removeLayer(currentLayer);
@@ -103,15 +103,23 @@
         loading.style.display = 'block';
 
         try {
-            // 使用 leaflet-geopackage 直接加載
+            // 使用你的舊版邏輯：直接傳入 geoPackageUrl
             currentLayer = L.geoPackageFeatureLayer([], {
                 geoPackageUrl: url,
-                layerName: 'intensity', // 你 Python 裡存的 layer 名稱
+                layerName: 'intensity',
                 style: style,
                 onEachFeature: (feature, layer) => {
+                    const p = feature.properties;
                     layer.bindPopup(`
-                        <strong>街道:</strong> ${feature.properties.CHINESESTR || '未知'}<br>
-                        <strong>強度得分:</strong> ${feature.properties.Intensity_Score.toFixed(2)}
+                        <div style="min-width:180px">
+                            <strong style="font-size:14px">${p.CHINESESTR || '未知'}</strong><br>
+                            <span style="color:#e74c3c; font-size:18px; font-weight:bold;">出現機率: ${p.Intensity_Score}%</span>
+                            <table class="popup-table">
+                                <tr><td>📍 精確紀錄</td><td class="score-val">${p.P_Exact}%</td></tr>
+                                <tr><td>🕸️ 網絡擴散</td><td class="score-val">${p.P_Network}%</td></tr>
+                                <tr><td>🛣️ 街道背景</td><td class="score-val">${p.P_Street}%</td></tr>
+                            </table>
+                        </div>
                     `);
                 }
             }).addTo(map);
@@ -119,31 +127,29 @@
             console.log("加載成功:", url);
         } catch (error) {
             console.error("加載失敗:", error);
-            alert("找不到該時段的數據檔案。");
+            alert("數據加載失敗，請確保 GitHub 上的檔案存在。");
         } finally {
-            loading.style.display = 'none';
+            // 注意：由於插件是異步加載 URL，這裡的 loading 隱藏可能需要稍微延遲
+            setTimeout(() => { loading.style.display = 'none'; }, 1000);
         }
     }
 
-    // 圖例
     const legend = L.control({position: 'bottomleft'});
     legend.onAdd = function (map) {
         const div = L.DomUtil.create('div', 'info legend'),
-            grades = [0.1, 0.5, 1, 3, 5, 8];
-        div.innerHTML += '<b>強度分級</b><br>';
+            grades = [0, 20, 40, 60, 80];
+        div.innerHTML += '<b>違停機率 (%)</b><br>';
         for (let i = 0; i < grades.length; i++) {
             div.innerHTML +=
-                '<i style="background:' + getColor(grades[i] + 0.1) + '"></i> ' +
-                grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '<br>' : '+');
+                '<i style="background:' + getColor(grades[i] + 1) + '"></i> ' +
+                grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '%<br>' : '%+');
         }
         return div;
     };
     legend.addTo(map);
 
-    // 頁面加載後預先讀取一次
     window.onload = loadData;
 
 </script>
-
 </body>
 </html>
