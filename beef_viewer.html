@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZpeederHK - 違停機率動態地圖</title>
+    <title>ZpeederHK - 違停機率地圖</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -28,37 +28,38 @@
         }
         .btn-update:hover { background: #34495e; }
 
-        /* 進度條樣式 */
-        #progress-container {
+        /* 進度與狀態提示 */
+        #status-container {
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-            width: 320px; background: rgba(0,0,0,0.8); border-radius: 25px;
-            padding: 12px 20px; z-index: 2000; display: none;
+            width: 320px; background: rgba(0,0,0,0.85); border-radius: 25px;
+            padding: 15px; z-index: 2000; display: none;
         }
         #progress-bar-bg { width: 100%; background: #444; height: 8px; border-radius: 4px; overflow: hidden; }
         #progress-bar-fill { height: 100%; width: 0%; background: #00ff00; transition: width 0.2s; }
-        #progress-text { color: white; text-align: center; font-size: 12px; margin-top: 8px; font-family: monospace; }
+        #status-text { color: white; text-align: center; font-size: 12px; margin-top: 8px; font-family: monospace; }
         
-        /* Popup 表格 */
-        .popup-container { min-width: 200px; }
-        .popup-title { font-size: 16px; font-weight: bold; margin-bottom: 5px; color: #2c3e50; }
-        .popup-score { font-size: 20px; color: #e74c3c; font-weight: bold; margin-bottom: 10px; }
-        .popup-table { width: 100%; border-collapse: collapse; margin-top: 5px; }
-        .popup-table th, .popup-table td { text-align: left; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 12px; }
-        .popup-table th { color: #888; font-weight: normal; }
+        /* Popup 樣式 */
+        .popup-container { min-width: 220px; }
+        .popup-title { font-size: 16px; font-weight: bold; color: #2c3e50; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 8px; }
+        .popup-score { font-size: 22px; color: #e74c3c; font-weight: bold; margin-bottom: 10px; }
+        .popup-table { width: 100%; border-collapse: collapse; }
+        .popup-table td { padding: 4px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+        .popup-table .label { color: #888; width: 60%; }
+        .popup-table .val { font-weight: bold; text-align: right; }
         
         /* 圖例 */
         .legend {
-            background: white; padding: 10px; border-radius: 8px;
-            box-shadow: 0 0 15px rgba(0,0,0,0.1); line-height: 18px; color: #555;
+            background: white; padding: 12px; border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1); line-height: 20px; color: #555; font-size: 12px;
         }
         .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.8; border-radius: 2px; }
     </style>
 </head>
 <body>
 
-<div id="progress-container">
+<div id="status-container">
     <div id="progress-bar-bg"><div id="progress-bar-fill"></div></div>
-    <div id="progress-text">準備下載...</div>
+    <div id="status-text">正在初始化...</div>
 </div>
 
 <div class="control-panel">
@@ -73,8 +74,8 @@
 
     <label>查詢時段</label>
     <input type="range" id="hourSlider" min="0" max="23" value="15" oninput="hourVal.innerText = this.value.padStart(2, '0')">
-    <div style="text-align: center; font-size: 18px; font-weight: bold;"><span id="hourVal">15</span>:00</div>
-    <div style="text-align: center; font-size: 11px; color: #999;">(計算結果包含前後 1 小時數據)</div>
+    <div style="text-align: center; font-size: 20px; font-weight: bold;"><span id="hourVal">15</span>:00</div>
+    <div style="text-align: center; font-size: 11px; color: #999;">(涵蓋前後 1 小時歷史紀錄)</div>
 
     <button class="btn-update" onclick="loadData()">更新地圖數據</button>
 </div>
@@ -85,18 +86,17 @@
 <script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
 
 <script>
-    // 1. 初始化地圖
+    // 1. 地圖初始化
     const map = L.map('map', { zoomControl: false }).setView([22.3193, 114.1694], 13);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // 使用 CartoDB 簡潔底圖
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap &copy; CARTO'
     }).addTo(map);
 
     let currentLayer = null;
 
-    // 2. 機率顏色映射 (0% - 100%)
+    // 2. 顏色定義
     function getColor(p) {
         return p >= 80 ? '#800026' :
                p >= 60 ? '#BD0026' :
@@ -111,64 +111,57 @@
         return {
             weight: 5,
             opacity: 0.85,
-            color: getColor(feature.properties.Intensity_Score),
+            color: getColor(feature.properties.Intensity_Score || 0),
             lineCap: 'round'
         };
     }
 
-    // 3. 核心加載函數 (帶有進度條)
+    // 3. 核心數據加載函數 (終極穩定版)
     async function loadData() {
         const day = document.getElementById('dayType').value;
         const hour = document.getElementById('hourSlider').value;
-        const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${hour}h.gpkg`;
+        // 加上 Cache Buster 防止讀取到舊的損壞緩存
+        const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${hour}h.gpkg?t=${new Date().getTime()}`;
 
-        const container = document.getElementById('progress-container');
+        const container = document.getElementById('status-container');
         const bar = document.getElementById('progress-bar-fill');
-        const text = document.getElementById('progress-text');
+        const text = document.getElementById('status-text');
 
         if (currentLayer) map.removeLayer(currentLayer);
         container.style.display = 'block';
-        bar.style.width = '0%';
-        text.innerText = "正在連線...";
+        bar.style.width = '10%';
+        text.innerText = "連線中...";
 
         try {
-            // 1. 使用 Fetch 獲取回應
+            // 下載檔案
             const response = await fetch(url);
-            if (!response.ok) throw new Error(`HTTP 錯誤! 狀態碼: ${response.status}`);
+            if (!response.ok) throw new Error(`無法取得檔案 (HTTP ${response.status})`);
 
-            // 2. 監控下載進度
-            const reader = response.body.getReader();
-            const contentLength = +response.headers.get('Content-Length');
-            
-            let receivedLength = 0;
-            let chunks = []; 
-            
-            while(true) {
-                const {done, value} = await reader.read();
-                if (done) break;
-                chunks.push(value);
-                receivedLength += value.length;
-                
-                if (contentLength) {
-                    const percent = Math.round((receivedLength / contentLength) * 100);
-                    bar.style.width = percent + '%';
-                    text.innerText = `下載中: ${percent}% (${(receivedLength/1024/1024).toFixed(1)}MB)`;
+            text.innerText = "數據下載中...";
+            const arrayBuffer = await response.arrayBuffer();
+            bar.style.width = '60%';
+
+            // 🟢 重要：二進制檢查 (防止 GitHub LFS 錯誤)
+            const header = new Uint8Array(arrayBuffer.slice(0, 16));
+            const headerStr = String.fromCharCode(...header);
+            console.log("File Header:", headerStr);
+
+            if (!headerStr.includes("SQLite format 3")) {
+                // 如果是 LFS 檔案，內容會是文字開頭
+                if (headerStr.includes("version")) {
+                    throw new Error("偵測到 GitHub LFS 檔案。請確保 .gpkg 檔案是直接上傳而非透過 LFS 追蹤。");
                 }
+                throw new Error("檔案內容不是有效的 SQLite 資料庫格式。");
             }
 
-            // 3. 🟢 將 Chunks 合併為一個完整的 Uint8Array (這是解決 "not a database" 的關鍵)
-            let chunksAll = new Uint8Array(receivedLength);
-            let position = 0;
-            for(let chunk of chunks) {
-                chunksAll.set(chunk, position);
-                position += chunk.length;
-            }
+            text.innerText = "正在解析地理空間數據...";
+            bar.style.width = '90%';
 
-            text.innerText = "正在解析地理資料庫...";
+            // 🟢 使用 Uint8Array 確保插件能正確讀取二進制內容
+            const uint8Array = new Uint8Array(arrayBuffer);
 
-            // 4. 交給 GeoPackage 插件渲染
             currentLayer = L.geoPackageFeatureLayer([], {
-                geoPackageBinary: chunksAll, // 確保傳入的是完整的 Uint8Array
+                geoPackageBinary: uint8Array,
                 layerName: 'intensity',
                 style: style,
                 onEachFeature: (feature, layer) => {
@@ -178,32 +171,37 @@
                             <div class="popup-title">${p.CHINESESTR || '未知路段'}</div>
                             <div class="popup-score">出現機率: ${p.Intensity_Score}%</div>
                             <table class="popup-table">
-                                <tr><th>來源拆解</th><th>機率貢獻</th></tr>
-                                <tr><td>📍 精確點位</td><td>${p.P_Exact}%</td></tr>
-                                <tr><td>🕸️ 網絡擴散</td><td>${p.P_Network}%</td></tr>
-                                <tr><td>🛣️ 全街平均</td><td>${p.P_Street}%</td></tr>
+                                <tr><td class="label">📍 精確定位紀錄</td><td class="val">${p.P_Exact}%</td></tr>
+                                <tr><td class="label">🕸️ 鄰近網絡擴散</td><td class="val">${p.P_Network}%</td></tr>
+                                <tr><td class="label">🛣️ 街道背景推算</td><td class="val">${p.P_Street}%</td></tr>
                             </table>
+                            <p style="font-size:10px; color:#999; margin-top:10px;">
+                                *數據來自該時段歷史紀錄天數之佔比
+                            </p>
                         </div>
                     `;
                     layer.bindPopup(content);
                 }
             }).addTo(map);
 
+            bar.style.width = '100%';
+            text.innerText = "加載完成";
+
         } catch (err) {
-            console.error("載入失敗詳細資訊:", err);
+            console.error(err);
+            text.innerText = "錯誤: " + err.message;
             alert("載入失敗: " + err.message);
         } finally {
-            setTimeout(() => { container.style.display = 'none'; }, 800);
+            setTimeout(() => { container.style.display = 'none'; }, 1000);
         }
     }
 
-    // 5. 圖例控制
+    // 4. 圖例
     const legend = L.control({ position: 'bottomleft' });
     legend.onAdd = function () {
         const div = L.DomUtil.create('div', 'legend');
         const grades = [0, 5, 20, 40, 60, 80];
-        const labels = ['<strong>發生機率</strong>'];
-
+        div.innerHTML = '<strong>違停出現機率</strong><br>';
         for (let i = 0; i < grades.length; i++) {
             div.innerHTML +=
                 '<i style="background:' + getColor(grades[i] + 1) + '"></i> ' +
@@ -213,7 +211,7 @@
     };
     legend.addTo(map);
 
-    // 初始載入
+    // 初次載入執行
     window.onload = loadData;
 
 </script>
