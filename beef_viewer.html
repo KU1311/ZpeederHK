@@ -11,55 +11,55 @@
         body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
         #map { height: 100vh; width: 100%; }
         
+        /* 左上角狀態列 */
         #status-indicator {
             position: absolute; top: 20px; left: 20px; z-index: 2000;
-            background: rgba(0,0,0,0.8); color: #00ff00; padding: 12px 20px;
+            background: rgba(0,0,0,0.85); color: #00ff00; padding: 12px 20px;
             border-radius: 4px; font-family: monospace; font-size: 13px;
             display: none; box-shadow: 0 0 10px rgba(0,0,0,0.5);
-            pointer-events: none;
         }
 
         .control-panel {
             position: absolute; top: 20px; right: 20px; z-index: 1000;
             background: white; padding: 15px; border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2); width: 250px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2); width: 260px;
         }
-        select, input { width: 100%; margin: 10px 0; padding: 5px; }
+        select, input { width: 100%; margin: 10px 0; padding: 8px; border-radius: 4px; border: 1px solid #ddd; }
 
-        .popup-box { min-width: 240px; }
-        .popup-title { font-weight: bold; font-size: 14px; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 5px;}
-        .prob-text { color: #e74c3c; font-size: 20px; font-weight: bold; margin: 5px 0; }
+        /* Popup 樣式優化 */
+        .popup-box { min-width: 260px; }
+        .popup-title { font-weight: bold; font-size: 16px; border-bottom: 2px solid #2c3e50; padding-bottom: 5px; margin-bottom: 8px; color: #2c3e50; }
+        .prob-text { color: #e74c3c; font-size: 22px; font-weight: bold; margin: 5px 0; }
         .history-box { 
-            background: #fff; border: 1px solid #eee; border-left: 4px solid #2c3e50; 
-            padding: 8px; font-size: 11px; color: #444; margin-top: 10px;
-            line-height: 1.6;
+            background: #f8f9fa; border: 1px solid #dee2e6; border-left: 5px solid #2c3e50; 
+            padding: 10px; font-size: 12px; color: #333; margin-top: 12px;
+            line-height: 1.7; word-break: keep-all;
         }
 
-        .legend {
-            line-height: 18px; color: #555; background: white;
-            padding: 10px; border-radius: 5px; box-shadow: 0 0 15px rgba(0,0,0,0.2);
-        }
-        .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
+        .legend { line-height: 18px; color: #555; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 15px rgba(0,0,0,0.2); }
+        .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.8; }
     </style>
 </head>
 <body>
 
-<div id="status-indicator">⏳ 正在同步地理數據...</div>
+<div id="status-indicator">⏳ 數據同步中...</div>
 
 <div class="control-panel">
-    <h3>🚗 違停機率查詢</h3>
-    <label>日子類型：</label>
+    <h3 style="margin-top:0">🔍 違停風險地圖</h3>
+    <label>時段類型：</label>
     <select id="dayType">
         <option value="Weekday">平日 (Weekday)</option>
         <option value="Sat">週六 (Sat)</option>
         <option value="Sun">週日 (Sun)</option>
     </select>
 
-    <label>時間：</label>
-    <input type="range" id="hourSlider" min="0" max="23" value="15" oninput="hourVal.innerText = this.value">
-    <div style="text-align: center;"><span id="hourVal">15</span>:00 (±1h)</div>
+    <label>觀察時間：</label>
+    <input type="range" id="hourSlider" min="0" max="23" value="15" oninput="hourVal.innerText = this.value.padStart(2,'0')">
+    <div style="text-align: center; font-weight: bold;"><span id="hourVal">15</span>:00 (±1h)</div>
 
-    <button onclick="loadData()" style="margin-top: 15px; width: 100%; cursor: pointer; background: #2c3e50; color: white; border: none; padding: 10px; border-radius: 5px; font-weight: bold;">更新地圖數據</button>
+    <button onclick="loadData()" style="margin-top: 15px; width: 100%; cursor: pointer; background: #2c3e50; color: white; border: none; padding: 12px; border-radius: 5px; font-size: 14px; font-weight: bold;">
+        即時更新地圖
+    </button>
 </div>
 
 <div id="map"></div>
@@ -68,9 +68,10 @@
 <script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
 
 <script>
-    const map = L.map('map').setView([22.3193, 114.1694], 13);
+    const map = L.map('map').setView([22.3193, 114.1694], 14);
+    
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap &copy; CARTO'
+        attribution: '&copy; CARTO'
     }).addTo(map);
 
     let currentLayer = null;
@@ -84,55 +85,62 @@
         const day = document.getElementById('dayType').value;
         const hour = document.getElementById('hourSlider').value;
         const status = document.getElementById('status-indicator');
-        const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${hour}h.gpkg?v=${new Date().getTime()}`;
+        
+        // 核心修正：使用 v=Date.now() 強制瀏覽器跳過緩存讀取最新的 GPKG
+        const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${hour}h.gpkg?v=${Date.now()}`;
 
         if (currentLayer) map.removeLayer(currentLayer);
-
+        
         status.style.display = 'block';
-        status.innerText = "⏳ 正在拉取檔案...";
+        status.innerText = `⏳ 載入中: ${day} @ ${hour}h...`;
 
         currentLayer = L.geoPackageFeatureLayer([], {
             geoPackageUrl: url,
             layerName: 'intensity',
             style: (f) => ({
-                weight: 5, opacity: 0.85, color: getColor(f.properties.Intensity_Score), lineCap: 'round'
+                weight: 6,
+                opacity: 0.85,
+                color: getColor(f.properties.Intensity_Score),
+                lineCap: 'round'
             }),
             onEachFeature: (feature, layer) => {
                 const p = feature.properties;
+                // Popup 內容優化
                 layer.bindPopup(`
                     <div class="popup-box">
-                        <div class="popup-title">${p.CHINESESTR || '未知路段'}</div>
-                        <div class="prob-text">機率: ${p.Intensity_Score}%</div>
-                        <div style="font-size:11px; color:#888; margin-bottom:5px;">
-                            拆解: 📍${p.P_Exact}% | 🕸️${p.P_Network}% | 🛣️${p.P_Street}%
+                        <div class="popup-title">${p.CHINESESTR || '未知街道'}</div>
+                        <div class="prob-text">風險機率: ${p.Intensity_Score}%</div>
+                        <div style="font-size:12px; color:#7f8c8d; margin-bottom:8px;">
+                            權重: 📍精確 ${p.P_Exact}% | 🕸️擴散 ${p.P_Network}%
                         </div>
                         <div class="history-box">
-                            <strong>🕒 近期 3 筆詳細報案紀錄：</strong><br>
-                            <div style="margin-top:6px;">${p.Recent_Logs || '此時段暫無詳細歷史'}</div>
+                            <strong>🕒 最近 3 筆報案詳情：</strong><br>
+                            <div style="margin-top:6px; white-space: pre-wrap;">${p.Recent_Logs || '暫無歷史紀錄'}</div>
                         </div>
                     </div>
                 `);
             }
         }).addTo(map);
 
-        let counter = 0;
-        const timer = setInterval(() => {
-            counter++;
-            if (map.hasLayer(currentLayer) || counter > 60) {
-                status.innerText = "✅ 數據已就緒";
-                setTimeout(() => { status.style.display = 'none'; }, 1000);
-                clearInterval(timer);
+        // 檢測數據是否渲染成功的輪詢
+        let checkTimer = setInterval(() => {
+            if (map.hasLayer(currentLayer)) {
+                status.innerText = "✅ 數據同步完成";
+                setTimeout(() => { status.style.display = 'none'; }, 1500);
+                clearInterval(checkTimer);
             }
-        }, 150);
+        }, 200);
     }
 
+    // 初始化圖例
     const legend = L.control({position: 'bottomleft'});
     legend.onAdd = function () {
-        const div = L.DomUtil.create('div', 'legend'), grades = [0, 20, 40, 60, 80];
-        div.innerHTML = '<b>違停機率</b><br>';
+        const div = L.DomUtil.create('div', 'legend');
+        const grades = [0, 20, 40, 60, 80];
+        div.innerHTML = '<b>風險程度</b><br>';
         for (let i = 0; i < grades.length; i++) {
             div.innerHTML += '<i style="background:' + getColor(grades[i] + 1) + '"></i> ' +
-                grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '%<br>' : '%+');
+                grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '%' : '%+') + '<br>';
         }
         return div;
     };
