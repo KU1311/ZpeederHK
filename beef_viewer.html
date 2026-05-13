@@ -11,7 +11,6 @@
         body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
         #map { height: 100vh; width: 100%; }
         
-        /* 角落狀態提示 */
         #status-indicator {
             position: absolute; top: 20px; left: 20px; z-index: 2000;
             background: rgba(0,0,0,0.8); color: #00ff00; padding: 12px 20px;
@@ -27,14 +26,13 @@
         }
         select, input { width: 100%; margin: 10px 0; padding: 5px; }
 
-        /* Popup 內容樣式 */
-        .popup-box { min-width: 200px; }
-        .popup-title { font-weight: bold; font-size: 14px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
-        .prob-text { color: #e74c3c; font-size: 18px; font-weight: bold; margin: 8px 0; }
+        .popup-box { min-width: 240px; }
+        .popup-title { font-weight: bold; font-size: 14px; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 5px;}
+        .prob-text { color: #e74c3c; font-size: 20px; font-weight: bold; margin: 5px 0; }
         .history-box { 
-            background: #f9f9f9; border-left: 3px solid #333; 
-            padding: 8px; font-size: 11px; color: #555; margin-top: 10px;
-            max-height: 80px; overflow-y: auto;
+            background: #fff; border: 1px solid #eee; border-left: 4px solid #2c3e50; 
+            padding: 8px; font-size: 11px; color: #444; margin-top: 10px;
+            line-height: 1.6;
         }
 
         .legend {
@@ -52,16 +50,16 @@
     <h3>🚗 違停機率查詢</h3>
     <label>日子類型：</label>
     <select id="dayType">
-        <option value="Weekday">Weekday (平日)</option>
-        <option value="Sat">Sat (週六)</option>
-        <option value="Sun">Sun (週日)</option>
+        <option value="Weekday">平日 (Weekday)</option>
+        <option value="Sat">週六 (Sat)</option>
+        <option value="Sun">週日 (Sun)</option>
     </select>
 
     <label>時間：</label>
     <input type="range" id="hourSlider" min="0" max="23" value="15" oninput="hourVal.innerText = this.value">
     <div style="text-align: center;"><span id="hourVal">15</span>:00 (±1h)</div>
 
-    <button onclick="loadData()" style="margin-top: 15px; width: 100%; cursor: pointer; background: #2c3e50; color: white; border: none; padding: 10px; border-radius: 5px; font-weight: bold;">更新地圖</button>
+    <button onclick="loadData()" style="margin-top: 15px; width: 100%; cursor: pointer; background: #2c3e50; color: white; border: none; padding: 10px; border-radius: 5px; font-weight: bold;">更新地圖數據</button>
 </div>
 
 <div id="map"></div>
@@ -93,47 +91,39 @@
         status.style.display = 'block';
         status.innerText = "⏳ 正在拉取檔案...";
 
-        // 使用 geoPackageUrl 確保相容性
         currentLayer = L.geoPackageFeatureLayer([], {
             geoPackageUrl: url,
             layerName: 'intensity',
-            style: function(feature) {
-                return {
-                    weight: 5,
-                    color: getColor(feature.properties.Intensity_Score),
-                    opacity: 0.85, // 這裡保持正常顯示，確保用戶能看到進度
-                    lineCap: 'round'
-                };
-            },
+            style: (f) => ({
+                weight: 5, opacity: 0.85, color: getColor(f.properties.Intensity_Score), lineCap: 'round'
+            }),
             onEachFeature: (feature, layer) => {
                 const p = feature.properties;
                 layer.bindPopup(`
                     <div class="popup-box">
                         <div class="popup-title">${p.CHINESESTR || '未知路段'}</div>
                         <div class="prob-text">機率: ${p.Intensity_Score}%</div>
-                        <div style="font-size:11px; color:#888;">
+                        <div style="font-size:11px; color:#888; margin-bottom:5px;">
                             拆解: 📍${p.P_Exact}% | 🕸️${p.P_Network}% | 🛣️${p.P_Street}%
                         </div>
                         <div class="history-box">
-                            <strong>🕒 最近 3 筆歷史紀錄：</strong><br>
-                            ${p.Recent_Logs || '無詳細歷史數據'}
+                            <strong>🕒 近期 3 筆詳細報案紀錄：</strong><br>
+                            <div style="margin-top:6px;">${p.Recent_Logs || '此時段暫無詳細歷史'}</div>
                         </div>
                     </div>
                 `);
             }
         }).addTo(map);
 
-        // 監控加載狀態的穩健做法
-        let checkCount = 0;
-        const checkInterval = setInterval(() => {
-            checkCount++;
-            // 如果圖層已經有數據，或者過了 5 秒，就關閉 loading 提示
-            if (map.hasLayer(currentLayer) || checkCount > 50) {
-                status.innerText = "✅ 已更新";
+        let counter = 0;
+        const timer = setInterval(() => {
+            counter++;
+            if (map.hasLayer(currentLayer) || counter > 60) {
+                status.innerText = "✅ 數據已就緒";
                 setTimeout(() => { status.style.display = 'none'; }, 1000);
-                clearInterval(checkInterval);
+                clearInterval(timer);
             }
-        }, 100);
+        }, 150);
     }
 
     const legend = L.control({position: 'bottomleft'});
