@@ -11,12 +11,13 @@
         body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
         #map { height: 100vh; width: 100%; }
         
-        /* 角落 Loading 狀態 */
+        /* 角落狀態提示 */
         #status-indicator {
             position: absolute; top: 20px; left: 20px; z-index: 2000;
             background: rgba(0,0,0,0.8); color: #00ff00; padding: 12px 20px;
             border-radius: 4px; font-family: monospace; font-size: 13px;
             display: none; box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            pointer-events: none;
         }
 
         .control-panel {
@@ -26,13 +27,14 @@
         }
         select, input { width: 100%; margin: 10px 0; padding: 5px; }
 
-        /* Popup 內容美化 */
+        /* Popup 內容樣式 */
         .popup-box { min-width: 200px; }
         .popup-title { font-weight: bold; font-size: 14px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
-        .prob-text { color: #e74c3c; font-size: 20px; font-weight: bold; margin: 8px 0; }
+        .prob-text { color: #e74c3c; font-size: 18px; font-weight: bold; margin: 8px 0; }
         .history-box { 
             background: #f9f9f9; border-left: 3px solid #333; 
             padding: 8px; font-size: 11px; color: #555; margin-top: 10px;
+            max-height: 80px; overflow-y: auto;
         }
 
         .legend {
@@ -44,22 +46,22 @@
 </head>
 <body>
 
-<div id="status-indicator">📡 正在從伺服器拉取數據...</div>
+<div id="status-indicator">⏳ 正在同步地理數據...</div>
 
 <div class="control-panel">
     <h3>🚗 違停機率查詢</h3>
-    <label>選擇日子類型：</label>
+    <label>日子類型：</label>
     <select id="dayType">
-        <option value="Weekday">平日 (Weekday)</option>
-        <option value="Sat">週六 (Sat)</option>
-        <option value="Sun">週日 (Sun)</option>
+        <option value="Weekday">Weekday (平日)</option>
+        <option value="Sat">Sat (週六)</option>
+        <option value="Sun">Sun (週日)</option>
     </select>
 
-    <label>選擇時間：</label>
+    <label>時間：</label>
     <input type="range" id="hourSlider" min="0" max="23" value="15" oninput="hourVal.innerText = this.value">
     <div style="text-align: center;"><span id="hourVal">15</span>:00 (±1h)</div>
 
-    <button onclick="loadData()" style="margin-top: 15px; width: 100%; cursor: pointer; background: #333; color: white; border: none; padding: 10px; border-radius: 5px; font-weight: bold;">更新地圖數據</button>
+    <button onclick="loadData()" style="margin-top: 15px; width: 100%; cursor: pointer; background: #2c3e50; color: white; border: none; padding: 10px; border-radius: 5px; font-weight: bold;">更新地圖</button>
 </div>
 
 <div id="map"></div>
@@ -69,7 +71,9 @@
 
 <script>
     const map = L.map('map').setView([22.3193, 114.1694], 13);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
+    }).addTo(map);
 
     let currentLayer = null;
 
@@ -87,15 +91,20 @@
         if (currentLayer) map.removeLayer(currentLayer);
 
         status.style.display = 'block';
-        status.innerText = "⏳ 正在獲取並渲染數據...";
+        status.innerText = "⏳ 正在拉取檔案...";
 
-        // 核心：全部加載後才顯示
+        // 使用 geoPackageUrl 確保相容性
         currentLayer = L.geoPackageFeatureLayer([], {
             geoPackageUrl: url,
             layerName: 'intensity',
-            style: (f) => ({
-                weight: 5, opacity: 0.85, color: getColor(f.properties.Intensity_Score), lineCap: 'round'
-            }),
+            style: function(feature) {
+                return {
+                    weight: 5,
+                    color: getColor(feature.properties.Intensity_Score),
+                    opacity: 0.85, // 這裡保持正常顯示，確保用戶能看到進度
+                    lineCap: 'round'
+                };
+            },
             onEachFeature: (feature, layer) => {
                 const p = feature.properties;
                 layer.bindPopup(`
@@ -107,27 +116,26 @@
                         </div>
                         <div class="history-box">
                             <strong>🕒 最近 3 筆歷史紀錄：</strong><br>
-                            ${p.Recent_Logs || '無詳細歷史'}
+                            ${p.Recent_Logs || '無詳細歷史數據'}
                         </div>
                     </div>
                 `);
             }
-        });
+        }).addTo(map);
 
-        // 利用 dataloaded 事件（插件在數據全部解析後觸發）
-        currentLayer.on('dataloaded', function() {
-            currentLayer.addTo(map);
-            status.innerText = "✅ 加載完成";
-            setTimeout(() => { status.style.display = 'none'; }, 1000);
-        });
-
-        // 備用機制：如果 5 秒後還沒 load 完，通常是檔案太大或網路問題
-        setTimeout(() => {
-            if (status.style.display !== 'none') status.innerText = "⏳ 數據量較大，請稍候...";
-        }, 3000);
+        // 監控加載狀態的穩健做法
+        let checkCount = 0;
+        const checkInterval = setInterval(() => {
+            checkCount++;
+            // 如果圖層已經有數據，或者過了 5 秒，就關閉 loading 提示
+            if (map.hasLayer(currentLayer) || checkCount > 50) {
+                status.innerText = "✅ 已更新";
+                setTimeout(() => { status.style.display = 'none'; }, 1000);
+                clearInterval(checkInterval);
+            }
+        }, 100);
     }
 
-    // 圖例
     const legend = L.control({position: 'bottomleft'});
     legend.onAdd = function () {
         const div = L.DomUtil.create('div', 'legend'), grades = [0, 20, 40, 60, 80];
