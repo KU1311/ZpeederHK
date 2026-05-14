@@ -3,63 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZpeederHK - 違停風險全時段地圖</title>
+    <title>ZpeederHK - 違停風險動態地圖</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
         #map { height: 100vh; width: 100%; }
-        
         #status-indicator {
             position: absolute; top: 20px; left: 20px; z-index: 2000;
             background: rgba(0,0,0,0.85); color: #00ff00; padding: 12px 20px;
             border-radius: 4px; font-family: monospace; font-size: 13px; display: none;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5); pointer-events: none;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
-
         .control-panel {
             position: absolute; top: 20px; right: 20px; z-index: 1000;
             background: white; padding: 15px; border-radius: 8px; width: 280px;
             box-shadow: 0 2px 15px rgba(0,0,0,0.3);
         }
-
         .mode-switch { display: flex; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
         .mode-switch button { flex: 1; border: none; padding: 8px; cursor: pointer; background: #eee; font-weight: bold; }
         .mode-switch button.active { background: #2c3e50; color: white; }
-
         .input-group { margin-bottom: 12px; }
         label { font-size: 12px; color: #666; font-weight: bold; }
-        select, input[type="range"] { width: 100%; margin-top: 5px; padding: 5px; cursor: pointer; }
-        
+        select, input[type="range"] { width: 100%; margin-top: 5px; padding: 5px; }
         .range-display { text-align: center; font-weight: bold; font-size: 14px; margin: 5px 0; color: #e74c3c; }
-        
         button#update-btn {
-            width: 100%; padding: 12px; background: #2c3e50; color: white; 
-            border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 15px;
-            transition: background 0.3s;
+            width: 100%; padding: 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; 
+            cursor: pointer; font-weight: bold; font-size: 15px;
         }
-        button#update-btn:hover { background: #1a252f; }
-
         .popup-box { min-width: 250px; }
-        .history-box { 
-            background: #f8f9fa; border-left: 5px solid #2c3e50; 
-            padding: 8px; font-size: 11px; color: #333; margin-top: 10px; line-height: 1.5;
-        }
-        .legend { line-height: 18px; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .history-box { background: #f8f9fa; border-left: 5px solid #2c3e50; padding: 8px; font-size: 11px; margin-top: 10px; }
+        .legend { line-height: 18px; background: white; padding: 10px; border-radius: 5px; }
         .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.8; }
     </style>
 </head>
 <body>
 
-<div id="status-indicator">⏳ 正在同步數據...</div>
+<div id="status-indicator">⏳ 初始化地圖中...</div>
 
 <div class="control-panel">
-    <h3 style="margin:0 0 15px 0; text-align: center;">🚗 違停風險全時段查詢</h3>
-    
+    <h3 style="margin:0 0 15px 0; text-align: center;">🚗 違停風險查詢</h3>
     <div class="mode-switch">
         <button id="btn-single" class="active" onclick="setMode('single')">單一時點</button>
         <button id="btn-range" onclick="setMode('range')">長時間停泊</button>
     </div>
-
     <div class="input-group">
         <label>日子類型：</label>
         <select id="dayType">
@@ -68,28 +54,16 @@
             <option value="Sun">週日 (Sun)</option>
         </select>
     </div>
-
     <div id="ui-single">
-        <div class="input-group">
-            <label>選擇時間：</label>
-            <input type="range" id="singleHour" min="0" max="23" value="15" oninput="updateRangeText()">
-            <div class="range-display"><span id="singleHourVal">15</span>:00 (±1h)</div>
-        </div>
+        <input type="range" id="singleHour" min="0" max="23" value="15" oninput="updateRangeText()">
+        <div class="range-display"><span id="singleHourVal">15</span>:00</div>
     </div>
-
     <div id="ui-range" style="display:none">
-        <div class="input-group">
-            <label>開始：</label>
-            <input type="range" id="startHour" min="0" max="23" value="9" oninput="updateRangeText()">
-        </div>
-        <div class="input-group">
-            <label>結束：</label>
-            <input type="range" id="endHour" min="0" max="23" value="17" oninput="updateRangeText()">
-        </div>
+        <label>開始時間：</label><input type="range" id="startHour" min="0" max="23" value="9" oninput="updateRangeText()">
+        <label>結束時間：</label><input type="range" id="endHour" min="0" max="23" value="17" oninput="updateRangeText()">
         <div class="range-display">時段：<span id="rangeText">09:00 - 17:00</span></div>
     </div>
-
-    <button id="update-btn" onclick="executeLoad()">即時計算風險</button>
+    <button id="update-btn" onclick="executeLoad()">立即更新地圖</button>
 </div>
 
 <div id="map"></div>
@@ -132,9 +106,7 @@
     async function executeLoad() {
         const day = document.getElementById('dayType').value;
         const status = document.getElementById('status-indicator');
-        
         status.style.display = 'block';
-        status.innerText = "⏳ 正在提取數據...";
 
         if (geoLayer) map.removeLayer(geoLayer);
 
@@ -150,110 +122,82 @@
 
         let roadDataMap = new Map();
 
-        try {
-            for (let h of hours) {
-                status.innerText = `⏳ 加載中: ${day} ${h}:00 (${hours.indexOf(h)+1}/${hours.length})`;
-                const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${h}h.gpkg?v=${Date.now()}`;
-                
-                // 改用 GeoPackage 庫直接讀取數據，避開 Leaflet 事件 Bug
-                const result = await new Promise((resolve, reject) => {
-                    L.geoPackageFeatureLayer([], {
-                        geoPackageUrl: url,
-                        layerName: 'intensity',
-                        onEachFeature: (f) => {
-                            const id = f.properties.OBJECTID;
-                            const p = f.properties.Intensity_Score / 100;
-                            if (!roadDataMap.has(id)) {
-                                roadDataMap.set(id, {
-                                    geom: f.geometry,
-                                    name: f.properties.CHINESESTR,
-                                    invProb: (1 - p),
-                                    logs: f.properties.Recent_Logs || ""
-                                });
-                            } else {
-                                let item = roadDataMap.get(id);
-                                item.invProb *= (1 - p);
-                                if (f.properties.Recent_Logs && !item.logs.includes(f.properties.Recent_Logs)) {
-                                    item.logs = f.properties.Recent_Logs + "<br>" + item.logs;
-                                }
-                            }
-                        }
-                    }).on('dataloaded', resolve).on('error', resolve); // 無論成功失敗都繼續
-                    
-                    // 安全超時：防止某個時段檔案不存在導致卡死
-                    setTimeout(resolve, 2000);
-                });
-            }
-
-            // 構建最終顯示的 GeoJSON
-            const features = [];
-            roadDataMap.forEach((data, id) => {
-                const finalProb = Math.round((1 - data.invProb) * 1000) / 10;
-                features.push({
-                    type: "Feature",
-                    geometry: data.geom,
-                    properties: {
-                        CHINESESTR: data.name,
-                        Intensity_Score: finalProb,
-                        Recent_Logs: data.logs.split('<br>').slice(0, 3).join('<br>')
-                    }
-                });
+        for (let h of hours) {
+            status.innerText = `⏳ 讀取中: ${h}:00 (${hours.indexOf(h)+1}/${hours.length})`;
+            const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${h}h.gpkg?v=${Date.now()}`;
+            
+            // 使用臨時圖層提取數據
+            const tempLayer = L.geoPackageFeatureLayer([], {
+                geoPackageUrl: url,
+                layerName: 'intensity'
             });
 
-            if (features.length === 0) {
-                alert("此時段無數據紀錄");
-                status.style.display = 'none';
-                return;
-            }
-
-            geoLayer = L.geoJSON({ type: "FeatureCollection", features }, {
-                style: (f) => ({
-                    weight: 6, opacity: 0.85, 
-                    color: getColor(f.properties.Intensity_Score), 
-                    lineCap: 'round'
-                }),
-                onEachFeature: (f, layer) => {
-                    layer.bindPopup(`
-                        <div class="popup-box">
-                            <div class="popup-title">${f.properties.CHINESESTR}</div>
-                            <div class="prob-text">總結風險: ${f.properties.Intensity_Score}%</div>
-                            <div style="font-size:11px; color:#666;">
-                                ${currentMode === 'single' ? '單一時段' : '停泊期間累積風險'}
-                            </div>
-                            <div class="history-box">
-                                <strong>🕒 最新報案詳情：</strong><br>
-                                <div style="margin-top:5px;">${f.properties.Recent_Logs || '暫無紀錄'}</div>
-                            </div>
-                        </div>
-                    `);
-                }
-            }).addTo(map);
-
-            status.innerText = "✅ 加載完成";
-            setTimeout(() => { status.style.display = 'none'; }, 1000);
-
-        } catch (e) {
-            console.error(e);
-            status.innerText = "❌ 加載失敗";
-            setTimeout(() => { status.style.display = 'none'; }, 2000);
+            // 🛠️ 關鍵修正：自定義監測數據加載
+            await new Promise(resolve => {
+                let attempts = 0;
+                const check = setInterval(() => {
+                    // 檢查圖層是否已經抓到數據 (此處檢查插件內部的 _geojson)
+                    const features = tempLayer.getGeoJSON ? tempLayer.getGeoJSON() : null;
+                    if ((features && features.features && features.features.length > 0) || attempts > 20) {
+                        if (features && features.features) {
+                            features.features.forEach(f => {
+                                const id = f.properties.OBJECTID;
+                                const prob = (f.properties.Intensity_Score || 0) / 100;
+                                if (!roadDataMap.has(id)) {
+                                    roadDataMap.set(id, { geom: f.geometry, name: f.properties.CHINESESTR, invProb: (1 - prob), logs: f.properties.Recent_Logs || "" });
+                                } else {
+                                    let d = roadDataMap.get(id);
+                                    d.invProb *= (1 - prob);
+                                    if (f.properties.Recent_Logs && !d.logs.includes(f.properties.Recent_Logs)) d.logs = f.properties.Recent_Logs + "<br>" + d.logs;
+                                }
+                            });
+                        }
+                        clearInterval(check);
+                        resolve();
+                    }
+                    attempts++;
+                }, 150);
+            });
         }
+
+        const features = [];
+        roadDataMap.forEach((data, id) => {
+            const finalScore = Math.round((1 - data.invProb) * 1000) / 10;
+            features.push({ type: "Feature", geometry: data.geom, properties: { CHINESESTR: data.name, Intensity_Score: finalScore, Recent_Logs: data.logs.split('<br>').slice(0, 3).join('<br>') } });
+        });
+
+        if (features.length === 0) {
+            status.innerText = "❌ 未找到數據，請確認 GitHub 檔案路徑";
+            setTimeout(() => status.style.display = 'none', 3000);
+            return;
+        }
+
+        geoLayer = L.geoJSON({ type: "FeatureCollection", features }, {
+            style: (f) => ({ weight: 6, opacity: 0.85, color: getColor(f.properties.Intensity_Score), lineCap: 'round' }),
+            onEachFeature: (f, layer) => {
+                layer.bindPopup(`
+                    <div class="popup-box">
+                        <div class="popup-title">${f.properties.CHINESESTR}</div>
+                        <div class="prob-text">總結風險: ${f.properties.Intensity_Score}%</div>
+                        <div class="history-box"><strong>🕒 最新報案詳情：</strong><br>${f.properties.Recent_Logs || '暫無紀錄'}</div>
+                    </div>
+                `);
+            }
+        }).addTo(map);
+
+        status.innerText = "✅ 數據已就緒";
+        setTimeout(() => status.style.display = 'none', 1000);
     }
 
     const legend = L.control({position: 'bottomleft'});
     legend.onAdd = function () {
         const div = L.DomUtil.create('div', 'legend'), grades = [0, 10, 30, 50, 70, 90];
-        div.innerHTML = '<b>總體風險分級</b><br>';
-        for (let i = 0; i < grades.length; i++) {
-            div.innerHTML += `<i style="background:${getColor(grades[i] + 1)}"></i> ${grades[i]}%${grades[i+1] ? '&ndash;'+grades[i+1]+'%' : '+'}<br>`;
-        }
+        div.innerHTML = '<b>風險程度</b><br>';
+        for (let i = 0; i < grades.length; i++) div.innerHTML += `<i style="background:${getColor(grades[i] + 1)}"></i> ${grades[i]}%${grades[i+1] ? '&ndash;'+grades[i+1]+'%' : '+'}<br>`;
         return div;
     };
     legend.addTo(map);
-
-    window.onload = () => {
-        updateRangeText();
-        executeLoad();
-    };
+    window.onload = () => { updateRangeText(); executeLoad(); };
 </script>
 </body>
 </html>
