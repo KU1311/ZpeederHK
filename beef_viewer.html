@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZpeederHK - 違停風險分區優化版</title>
+    <title>ZpeederHK - 違停風險智能分區版</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -13,9 +13,10 @@
         
         #status-indicator {
             position: absolute; top: 20px; left: 20px; z-index: 2000;
-            background: rgba(0,0,0,0.85); color: #00ff00; padding: 12px 20px;
-            border-radius: 4px; font-family: monospace; font-size: 13px;
-            display: none; box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            background: rgba(0,0,0,0.9); color: #00ff00; padding: 15px;
+            border-radius: 8px; font-family: monospace; font-size: 14px;
+            display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            border: 1px solid #333; line-height: 1.6;
         }
 
         .control-panel {
@@ -25,24 +26,23 @@
         }
 
         select, input[type="range"] { width: 100%; margin: 8px 0; cursor: pointer; }
-        .range-display { text-align: center; font-weight: bold; color: #e74c3c; margin-bottom: 10px; font-size: 15px; }
+        .range-display { text-align: center; font-weight: bold; color: #e74c3c; margin-bottom: 10px; font-size: 18px; }
 
         button#update-btn {
             width: 100%; padding: 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; 
-            cursor: pointer; font-weight: bold; transition: background 0.2s;
+            cursor: pointer; font-weight: bold; font-size: 14px;
         }
-        button#update-btn:hover { background: #1a252f; }
-
-        .popup-box { min-width: 200px; }
+        
+        .popup-box { min-width: 180px; }
         .history-box { 
             background: #f8f9fa; border-left: 4px solid #2c3e50; 
-            padding: 8px; font-size: 11px; margin-top: 8px; line-height: 1.4;
+            padding: 8px; font-size: 11px; margin-top: 8px;
         }
     </style>
 </head>
 <body>
 
-<div id="status-indicator">⏳ 初始化中...</div>
+<div id="status-indicator"></div>
 
 <div class="control-panel">
     <h3 style="margin:0 0 12px 0; text-align: center;">🚗 違停風險查詢</h3>
@@ -67,7 +67,7 @@
 <script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
 
 <script>
-    // 🛠️ 確保 id 與 Python 輸出的資料夾名稱精確對應
+    // 1. 18區數據配置 (請確保 id 與 GitHub 資料夾名稱完全一致)
     const districtRegistry = [
         { id: "Southern_District", name: "南區", center: [22.2279, 114.2120] },
         { id: "Wan_Chai_District", name: "灣仔區", center: [22.2721, 114.1823] },
@@ -75,7 +75,7 @@
         { id: "Eastern_District", name: "東區", center: [22.2738, 114.2259] },
         { id: "Islands_District", name: "離島區", center: [22.2222, 114.0188] },
         { id: "Yau_Tsim_Mong_District", name: "油尖旺區", center: [22.3068, 114.1662] },
-        { id: "Kwun_Tong_District", center: [22.3122, 114.2259] },
+        { id: "Kwun_Tong_District", name: "觀塘區", center: [22.3122, 114.2259] },
         { id: "Sham_Shui_Po_District", name: "深水埗區", center: [22.3318, 114.1534] },
         { id: "Kowloon_City_District", name: "九龍城區", center: [22.3181, 114.1923] },
         { id: "Wong_Tai_Sin_District", name: "黃大仙區", center: [22.3440, 114.2041] },
@@ -89,57 +89,91 @@
         { id: "North_District", name: "北區", center: [22.5211, 114.2121] }
     ];
 
+    const map = L.map('map', { zoomSnap: 0.1 }).setView([22.3193, 114.1700], 18);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
+
+    let activeLayers = [];
+    let userMarker = null;
+
+    function getColor(d) {
+        return d >= 80 ? '#800026' : d >= 60 ? '#BD0026' : d >= 40 ? '#E31A1C' : 
+               d >= 20 ? '#FC4E2A' : d > 0 ? '#FEB24C' : '#FFEDA0';
+    }
+
+    // --- 核心定位函數 ---
+    function initUserLocation() {
+        const status = document.getElementById('status-indicator');
+        status.style.display = 'block';
+        status.innerHTML = "📍 正在定位您的位置...";
+
+        map.locate({setView: false});
+
+        map.on('locationfound', (e) => {
+            console.log("定位成功:", e.latlng);
+            map.setView(e.latlng, 18, { animate: true });
+            
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.circleMarker(e.latlng, { 
+                radius: 8, fillColor: "#007bff", color: "#fff", weight: 3, fillOpacity: 1 
+            }).addTo(map).bindPopup("您的位置").openPopup();
+            
+            // 定位成功後再執行加載，確保排序正確
+            executeLoad();
+        });
+
+        map.on('locationerror', (err) => {
+            console.warn("定位失敗:", err.message);
+            status.innerHTML = "⚠️ 無法獲取位置，使用預設中心";
+            executeLoad();
+        });
+    }
+
+    // --- 分區異步加載 ---
     async function executeLoad() {
         const day = document.getElementById('dayType').value;
         const hour = document.getElementById('singleHour').value;
         const status = document.getElementById('status-indicator');
-        
-        // 🛠️ Debug: 確保獲取的是當前地圖中心（定位後的中心）
         const currentCenter = map.getCenter();
-        console.log("Current Map Center:", currentCenter);
 
-        // 清除舊圖層
+        // 1. 清理舊數據
         activeLayers.forEach(l => map.removeLayer(l));
         activeLayers = [];
 
-        // 🛠️ 核心排序：計算距離
+        // 2. 距離計算與排序 (Debug: 確保 Lat/Lng 順序正確)
         const sortedDistricts = districtRegistry.map(d => {
             const dist = currentCenter.distanceTo(L.latLng(d.center[0], d.center[1]));
             return { ...d, dist };
         }).sort((a, b) => a.dist - b.dist);
 
-        // 🛠️ 顯示目前識別出的區份
-        const currentDistrict = sortedDistricts[0];
-        console.log("Closest District identified:", currentDistrict.id);
-        
+        const myDist = sortedDistricts[0];
+        console.log("當前最接近區域:", myDist.name, "距離:", Math.round(myDist.dist), "米");
+
         status.style.display = 'block';
-        status.innerHTML = `📍 您目前在：<b>${currentDistrict.name || currentDistrict.id}</b><br>🚀 正在加載數據...`;
+        status.innerHTML = `📍 您目前在：<b>${myDist.name}</b><br>🚀 正在加載當前區域...`;
 
-        // 第一階段：最近的 1 個區
-        await loadBatch(sortedDistricts.slice(0, 1), day, hour, `🚀 優先載入 ${currentDistrict.name || '當前區'}...`);
+        // 第一波：當前區 (立即)
+        await loadBatch([myDist], day, hour);
 
-        // 第二階段：鄰近 3 個區
+        // 第二波：鄰近 3 個區 (0.5秒後)
         setTimeout(async () => {
-            await loadBatch(sortedDistricts.slice(1, 4), day, hour, "⏳ 載入鄰近區域...");
-        }, 600);
+            const neighbors = sortedDistricts.slice(1, 4);
+            status.innerHTML = `📍 您目前在：<b>${myDist.name}</b><br>⏳ 正在加載周邊區域...`;
+            await loadBatch(neighbors, day, hour);
+        }, 500);
 
-        // 第三階段：其餘全港
+        // 第三波：其餘全港 (2秒後)
         setTimeout(async () => {
-            await loadBatch(sortedDistricts.slice(4), day, hour, "🌐 背景下載全港數據...");
-            setTimeout(() => { status.style.display = 'none'; }, 2000);
+            const rest = sortedDistricts.slice(4);
+            status.innerHTML = `📍 您目前在：<b>${myDist.name}</b><br>🌐 正在補全全港數據...`;
+            await loadBatch(rest, day, hour);
+            setTimeout(() => { status.style.display = 'none'; }, 3000);
         }, 2000);
     }
 
-    async function loadBatch(list, day, hour, msg) {
-        const status = document.getElementById('status-indicator');
-        // 保留「您目前在」的提示，僅更新下一行
-        const currentLoc = status.innerHTML.split('<br>')[0];
-        status.innerHTML = `${currentLoc}<br>${msg}`;
-        
+    async function loadBatch(list, day, hour) {
         const tasks = list.map(dist => {
             const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/${dist.id}/Intensity_${day}_${hour}h.gpkg?v=${Date.now()}`;
-            
-            console.log(`Fetching: ${dist.id}`); // Debug 用：查看 Console 下載順序
+            console.log(`開始請求: ${dist.id}`);
 
             return new Promise((resolve) => {
                 const layer = L.geoPackageFeatureLayer([], {
@@ -152,16 +186,27 @@
                     }),
                     onEachFeature: (f, l) => {
                         const p = f.properties;
-                        l.bindPopup(`<b>${p.CHINESESTR}</b><br>機率: ${p.Intensity_Score}%`);
+                        l.bindPopup(`
+                            <div class="popup-box">
+                                <b>${p.CHINESESTR}</b><br>
+                                風險機率: <span style="color:red">${p.Intensity_Score}%</span>
+                                <div class="history-box">${p.Recent_Logs || '暫無紀錄'}</div>
+                            </div>
+                        `);
                     }
                 }).addTo(map);
 
                 layer.on('dataloaded', () => {
-                    console.log(`Finished: ${dist.id}`);
+                    console.log(`✅ 加載完成: ${dist.id}`);
                     resolve();
                 });
-                // 增加安全超時，防止某區檔案遺失導致整體卡死
-                setTimeout(resolve, 3000);
+
+                // 超時處理，避免單一檔案掛掉影響全部
+                setTimeout(() => {
+                    console.warn(`❌ 加載超時: ${dist.id}`);
+                    resolve();
+                }, 4000);
+
                 activeLayers.push(layer);
             });
         });
@@ -169,7 +214,11 @@
         await Promise.all(tasks);
     }
 
+    // --- 啟動門檻 ---
     window.onload = () => {
+        // 更新顯示數值
+        document.getElementById('hV1').innerText = document.getElementById('singleHour').value.padStart(2,'0');
+        // 執行定位與加載
         initUserLocation();
     };
 </script>
