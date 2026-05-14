@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZpeederHK - 精確邊界定位版</title>
+    <title>ZpeederHK - 精確邊界分區版</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -43,7 +43,7 @@
 </head>
 <body>
 
-<div id="status-indicator">⏳ 正在初始化邊界系統...</div>
+<div id="status-indicator">⏳ 正在初始化系統...</div>
 
 <div class="control-panel">
     <h3 style="margin:0 0 12px 0; text-align: center;">🚗 違停風險查詢</h3>
@@ -76,34 +76,48 @@
     let userMarker = null;
     let districtBoundaryLayer = null;
 
-    // 1. 初始化系統並載入邊界
-    async function initSystem() {
-        const status = document.getElementById('status-indicator');
-        status.style.display = 'block';
-        
-        try {
-            // 🛠️ 修正路徑為你提供的 /assets/ 目錄
-            const response = await fetch('https://ku1311.github.io/ZpeederHK/assets/districts.geojson');
-            if (!response.ok) throw new Error('Network response was not ok');
-            const geojsonData = await response.json();
-            
-            districtBoundaryLayer = L.geoJSON(geojsonData);
-            console.log("✅ 18區邊界加載成功");
-            initUserLocation();
-        } catch (err) {
-            console.error("❌ 邊界加載失敗:", err);
-            status.innerHTML = "⚠️ 邊界數據加載失敗，將使用預設區域";
-            initUserLocation();
-        }
-    }
+    // 18區完整清單 (用於備份與背景下載)
+    const allDistrictIDs = [
+        "Southern_District", "Wan_Chai_District", "Central_and_Western_District", 
+        "Eastern_District", "Islands_District", "Yau_Tsim_Mong_District", 
+        "Kwun_Tong_District", "Sham_Shui_Po_District", "Kowloon_City_District", 
+        "Wong_Tai_Sin_District", "Kwai_Tsing_District", "Tsuen_Wan_District", 
+        "Tuen_Mun_District", "Sha_Tin_District", "Sai_Kung_District", 
+        "Yuen_Long_District", "Tai_Po_District", "North_District"
+    ];
 
     function getColor(d) {
         return d >= 80 ? '#800026' : d >= 60 ? '#BD0026' : d >= 40 ? '#E31A1C' : 
                d >= 20 ? '#FC4E2A' : d > 0 ? '#FEB24C' : '#FFEDA0';
     }
 
-    // 2. 定位功能
+    // --- 初始化系統 ---
+    async function initSystem() {
+        const status = document.getElementById('status-indicator');
+        status.style.display = 'block';
+        
+        try {
+            // 讀取你提供的 districts.geojson 路徑
+            const response = await fetch('https://ku1311.github.io/ZpeederHK/assests/districts.geojson');
+            if (!response.ok) throw new Error('GeoJSON fetch failed');
+            const geojsonData = await response.json();
+            
+            // 建立隱形圖層用於 PIP 計算
+            districtBoundaryLayer = L.geoJSON(geojsonData);
+            console.log("✅ 18區邊界加載完成");
+            
+            initUserLocation();
+        } catch (err) {
+            console.error("❌ 邊界數據出錯:", err);
+            status.innerHTML = "⚠️ 邊界數據讀取失敗，改用預設加載";
+            executeLoad(); 
+        }
+    }
+
     function initUserLocation() {
+        const status = document.getElementById('status-indicator');
+        status.innerHTML = "📍 正在獲取您的精確位置...";
+        
         map.locate({setView: false});
 
         map.on('locationfound', (e) => {
@@ -112,10 +126,99 @@
             userMarker = L.circleMarker(e.latlng, { 
                 radius: 8, fillColor: "#007bff", color: "#fff", weight: 3, fillOpacity: 1 
             }).addTo(map).bindPopup("您的位置").openPopup();
+            
             executeLoad();
         });
 
         map.on('locationerror', () => {
-            console.warn("定位失敗，使用地圖中心點加載");
+            console.warn("定位失敗");
+            status.innerHTML = "⚠️ 定位失敗，加載預設區域";
             executeLoad();
         });
+    }
+
+    // --- 精確分區加載邏輯 ---
+    async function executeLoad() {
+        const day = document.getElementById('dayType').value;
+        const hour = document.getElementById('singleHour').value;
+        const status = document.getElementById('status-indicator');
+        const currentPos = map.getCenter();
+
+        // 清除現有圖層
+        activeLayers.forEach(l => map.removeLayer(l));
+        activeLayers = [];
+
+        let myDistrictID = "Yau_Tsim_Mong_District"; // 預設
+        let myDistrictName = "油尖旺區";
+
+        // 🛠️ PIP 空間判斷：找出用戶在那一區的多邊形內
+        if (districtBoundaryLayer) {
+            const results = leafletPip.pointInLayer(currentPos, districtBoundaryLayer);
+            if (results.length > 0) {
+                const props = results[0].feature.properties;
+                // 根據你 SHP 的欄位 NAME_EN 和 NAME_TC
+                myDistrictID = (props.NAME_EN || "Yau Tsim Mong").replace(/\s+/g, '_') + "_District";
+                myDistrictName = props.NAME_TC || "當前區域";
+                console.log("🎯 成功定位區域:", myDistrictID);
+            }
+        }
+
+        status.style.display = 'block';
+        status.innerHTML = `📍 您目前在：<b>${myDistrictName}</b><br>🚀 正在優先加載本區數據...`;
+
+        // 第一階段：立即加載用戶所在區
+        await loadBatch([myDistrictID], day, hour);
+
+        // 第二階段：背景補全其他 17 個區
+        const remaining = allDistrictIDs.filter(id => id !== myDistrictID);
+        setTimeout(async () => {
+            status.innerHTML = `📍 您目前在：<b>${myDistrictName}</b><br>🌐 背景補全全港數據...`;
+            await loadBatch(remaining, day, hour);
+            setTimeout(() => { status.style.display = 'none'; }, 2000);
+        }, 800);
+    }
+
+    async function loadBatch(ids, day, hour) {
+        const tasks = ids.map(id => {
+            const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/${id}/Intensity_${day}_${hour}h.gpkg?v=${Date.now()}`;
+            
+            return new Promise((resolve) => {
+                const layer = L.geoPackageFeatureLayer([], {
+                    geoPackageUrl: url,
+                    layerName: 'intensity',
+                    style: (f) => ({
+                        weight: 6, opacity: 0.85, 
+                        color: getColor(f.properties.Intensity_Score),
+                        lineCap: 'round'
+                    }),
+                    onEachFeature: (f, l) => {
+                        const p = f.properties;
+                        l.bindPopup(`
+                            <div class="popup-box">
+                                <div style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px; padding-bottom:5px;">${p.CHINESESTR}</div>
+                                <div style="color:#e74c3c; font-size:18px; font-weight:bold;">風險: ${p.Intensity_Score}%</div>
+                                <div class="history-box">🕒 近期紀錄：<br>${p.Recent_Logs || '無紀錄'}</div>
+                            </div>
+                        `);
+                    }
+                }).addTo(map);
+
+                layer.on('dataloaded', () => {
+                    console.log(`✅ Loaded: ${id}`);
+                    resolve();
+                });
+
+                // 防卡死機制
+                setTimeout(resolve, 4000);
+                activeLayers.push(layer);
+            });
+        });
+
+        await Promise.all(tasks);
+    }
+
+    // 啟動入口
+    window.onload = initSystem;
+</script>
+</body>
+</html>
