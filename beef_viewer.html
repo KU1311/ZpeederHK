@@ -91,7 +91,7 @@
 
 <script>
     // 1. 初始化地圖，設置較大的預設縮放值 (18)
-    const map = L.map('map').setView([22.3193, 114.1700], 18);
+    const map = L.map('map').setView([22.3193, 114.1700], 20);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 20
     }).addTo(map);
@@ -107,7 +107,7 @@
         status.innerText = "📍 正在請求定位權限...";
 
         // 🛠️ 設置定位成功後的縮放級別為 18 (最高級別之一)
-        map.locate({setView: true, maxZoom: 18});
+        map.locate({setView: true, maxZoom: 20});
 
         map.on('locationfound', function(e) {
             status.innerText = "🎯 已定位，加載附近數據...";
@@ -121,7 +121,7 @@
         map.on('locationerror', function() {
             status.innerText = "⚠️ 無法定位，已切換至預設區域";
             // 🛠️ 即使失敗，也跳轉到預設位置並維持 18 縮放
-            map.setView([22.3193, 114.1700], 18);
+            map.setView([22.3193, 114.1700], 20);
             setTimeout(() => { status.style.display = 'none'; }, 3000);
             executeLoad(); 
         });
