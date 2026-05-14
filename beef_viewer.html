@@ -90,9 +90,11 @@
 <script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
 
 <script>
-    // 1. 初始化地圖
-    const map = L.map('map').setView([22.3193, 114.1700], 13);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+    // 1. 初始化地圖，設置較大的預設縮放值 (18)
+    const map = L.map('map').setView([22.3193, 114.1700], 18);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20
+    }).addTo(map);
 
     let currentMode = 'single';
     let activeLayers = [];
@@ -104,8 +106,8 @@
         status.style.display = 'block';
         status.innerText = "📍 正在請求定位權限...";
 
-        // 請求定位
-        map.locate({setView: true, maxZoom: 15});
+        // 🛠️ 設置定位成功後的縮放級別為 18 (最高級別之一)
+        map.locate({setView: true, maxZoom: 18});
 
         map.on('locationfound', function(e) {
             status.innerText = "🎯 已定位，加載附近數據...";
@@ -117,9 +119,11 @@
         });
 
         map.on('locationerror', function() {
-            status.innerText = "⚠️ 無法獲取定位 (請檢查 HTTPS 或權限)";
+            status.innerText = "⚠️ 無法定位，已切換至預設區域";
+            // 🛠️ 即使失敗，也跳轉到預設位置並維持 18 縮放
+            map.setView([22.3193, 114.1700], 18);
             setTimeout(() => { status.style.display = 'none'; }, 3000);
-            executeLoad(); // 失敗也加載數據
+            executeLoad(); 
         });
     }
 
@@ -201,7 +205,6 @@
         setTimeout(() => { status.style.display = 'none'; }, 2000);
     }
 
-    // 初始化啟動
     window.onload = () => {
         updateRangeText();
         initUserLocation();
