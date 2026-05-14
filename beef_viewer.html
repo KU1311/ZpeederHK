@@ -121,7 +121,7 @@
                d >= 20 ? '#FC4E2A' : d > 0 ? '#FEB24C' : '#FFEDA0';
     }
 
-    function executeLoad() {
+    async function executeLoad() {
         const day = document.getElementById('dayType').value;
         const status = document.getElementById('status-indicator');
         
@@ -139,20 +139,34 @@
         }
 
         status.style.display = 'block';
-        status.innerText = `⏳ 載入時段數據...`;
+        status.innerText = `🚀 正在優先加載視角內數據...`;
 
-        hours.forEach(h => {
+        // 獲取當前地圖範圍
+        const currentBounds = map.getBounds();
+
+        // 使用 async/await 確保有序加載
+        for (const h of hours) {
             const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${h}h.gpkg?v=${Date.now()}`;
             
+            // 創建圖層，但加入 filter 邏輯
             const gpkgLayer = L.geoPackageFeatureLayer([], {
                 geoPackageUrl: url,
                 layerName: 'intensity',
-                style: (f) => ({
-                    weight: 6, 
-                    opacity: currentMode === 'single' ? 0.85 : 0.4, 
-                    color: getColor(f.properties.Intensity_Score),
-                    lineCap: 'round'
-                }),
+                // 🛠️ 關鍵優化 1：優先渲染判斷
+                filter: function(feature) {
+                    // 這裡不直接過濾掉（否則外面永遠出不來），而是配合渲染順序
+                    return true; 
+                },
+                style: (f) => {
+                    const isInView = currentBounds.contains(L.geoJSON(f).getBounds());
+                    return {
+                        weight: 6, 
+                        // 🛠️ 關鍵優化 2：非視角內的街道初始設為透明，等後續加載
+                        opacity: isInView ? (currentMode === 'single' ? 0.85 : 0.4) : 0, 
+                        color: getColor(f.properties.Intensity_Score),
+                        lineCap: 'round'
+                    };
+                },
                 onEachFeature: (f, layer) => {
                     const p = f.properties;
                     layer.bindPopup(`
@@ -163,12 +177,24 @@
                             <div class="history-box">🕒 紀錄：<br>${p.Recent_Logs || '無'}</div>
                         </div>
                     `);
+
+                    // 🛠️ 關鍵優化 3：如果原本在視角外，0.8秒後才顯示出來（分流渲染壓力）
+                    const isInView = currentBounds.contains(layer.getBounds());
+                    if (!isInView) {
+                        setTimeout(() => {
+                            layer.setStyle({ opacity: currentMode === 'single' ? 0.85 : 0.4 });
+                        }, 800);
+                    }
                 }
             }).addTo(map);
+            
             activeLayers.push(gpkgLayer);
-        });
+            
+            // 讓瀏覽器喘口氣再 load 下一個小時
+            await new Promise(r => setTimeout(r, 100));
+        }
 
-        setTimeout(() => { status.style.display = 'none'; }, 1500);
+        setTimeout(() => { status.style.display = 'none'; }, 2000);
     }
 
     window.onload = () => {
