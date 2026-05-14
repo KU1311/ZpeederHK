@@ -118,9 +118,9 @@
         }
 
         status.style.display = 'block';
-        status.innerText = `⏳ 正在載入時段...`;
+        status.innerText = `⏳ 正在載入數據...`;
 
-        // 3. 循環加載 (使用舊方法：直接加載圖層)
+        // 3. 循環加載
         hours.forEach(h => {
             const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${h}h.gpkg?v=${Date.now()}`;
             
@@ -128,18 +128,27 @@
                 geoPackageUrl: url,
                 layerName: 'intensity',
                 style: (f) => ({
-                    // 在範圍模式下降低透明度，實現「疊加」效果
                     weight: 6, 
                     opacity: currentMode === 'single' ? 0.85 : 0.4, 
                     color: getColor(f.properties.Intensity_Score),
                     lineCap: 'round'
                 }),
                 onEachFeature: (f, layer) => {
+                    const p = f.properties;
+                    // 🛠️ 在這裡重新加入 Source 分佈的 HTML
                     layer.bindPopup(`
                         <div class="popup-box">
-                            <div class="popup-title">${f.properties.CHINESESTR}</div>
-                            <div style="font-size:18px; color:#e74c3c; font-weight:bold;">風險: ${f.properties.Intensity_Score}%</div>
-                            <div class="history-box"><strong>🕒 最近紀錄：</strong><br>${f.properties.Recent_Logs || '無'}</div>
+                            <div class="popup-title">${p.CHINESESTR || '未知路段'}</div>
+                            <div style="font-size:20px; color:#e74c3c; font-weight:bold; margin-bottom:5px;">
+                                機率: ${p.Intensity_Score}%
+                            </div>
+                            <div style="font-size:12px; color:#666; margin-bottom:10px; border-bottom: 1px dashed #ccc; padding-bottom:5px;">
+                                📍${p.P_Exact || 0}% | 🕸️${p.P_Network || 0}% | 🛣️${p.P_Street || 0}%
+                            </div>
+                            <div class="history-box">
+                                <strong>🕒 最近報案紀錄：</strong><br>
+                                <div style="margin-top:5px; line-height:1.6;">${p.Recent_Logs || '暫無詳細紀錄'}</div>
+                            </div>
                         </div>
                     `);
                 }
@@ -148,8 +157,7 @@
             activeLayers.push(gpkgLayer);
         });
 
-        // 簡單的加載完畢提示
-        setTimeout(() => { status.style.display = 'none'; }, 2000);
+        setTimeout(() => { status.style.display = 'none'; }, 1500);
     }
 
     const legend = L.control({position: 'bottomleft'});
