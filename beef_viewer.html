@@ -122,70 +122,85 @@
 
         let roadDataMap = new Map();
 
+        // 逐一處理每個時段
         for (let h of hours) {
-            status.innerText = `⏳ 讀取中: ${h}:00 (${hours.indexOf(h)+1}/${hours.length})`;
+            status.innerText = `⏳ 加載中: ${h}:00...`;
             const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${h}h.gpkg?v=${Date.now()}`;
             
-            // 使用臨時圖層提取數據
-            const tempLayer = L.geoPackageFeatureLayer([], {
-                geoPackageUrl: url,
-                layerName: 'intensity'
-            });
-
-            // 🛠️ 關鍵修正：自定義監測數據加載
-            await new Promise(resolve => {
-                let attempts = 0;
-                const check = setInterval(() => {
-                    // 檢查圖層是否已經抓到數據 (此處檢查插件內部的 _geojson)
-                    const features = tempLayer.getGeoJSON ? tempLayer.getGeoJSON() : null;
-                    if ((features && features.features && features.features.length > 0) || attempts > 20) {
-                        if (features && features.features) {
-                            features.features.forEach(f => {
-                                const id = f.properties.OBJECTID;
-                                const prob = (f.properties.Intensity_Score || 0) / 100;
-                                if (!roadDataMap.has(id)) {
-                                    roadDataMap.set(id, { geom: f.geometry, name: f.properties.CHINESESTR, invProb: (1 - prob), logs: f.properties.Recent_Logs || "" });
-                                } else {
-                                    let d = roadDataMap.get(id);
-                                    d.invProb *= (1 - prob);
-                                    if (f.properties.Recent_Logs && !d.logs.includes(f.properties.Recent_Logs)) d.logs = f.properties.Recent_Logs + "<br>" + d.logs;
-                                }
+            await new Promise((resolve) => {
+                // 利用一個隱形圖層來讀取數據
+                const tempLayer = L.geoPackageFeatureLayer([], {
+                    geoPackageUrl: url,
+                    layerName: 'intensity',
+                    onEachFeature: (f) => {
+                        const id = f.properties.OBJECTID;
+                        const p = (f.properties.Intensity_Score || 0) / 100;
+                        if (!roadDataMap.has(id)) {
+                            roadDataMap.set(id, {
+                                geom: f.geometry,
+                                name: f.properties.CHINESESTR,
+                                invProb: (1 - p),
+                                logs: f.properties.Recent_Logs || ""
                             });
+                        } else {
+                            let item = roadDataMap.get(id);
+                            item.invProb *= (1 - p);
+                            // 避免重複 log
+                            if (f.properties.Recent_Logs && !item.logs.includes(f.properties.Recent_Logs.substring(0,10))) {
+                                item.logs = f.properties.Recent_Logs + "<br>" + item.logs;
+                            }
                         }
-                        clearInterval(check);
-                        resolve();
                     }
-                    attempts++;
-                }, 150);
+                });
+
+                // 監聽 dataloaded 事件
+                tempLayer.on('dataloaded', () => {
+                    resolve();
+                });
+
+                // 安全機制：超時自動跳過（例如檔案不存在時）
+                setTimeout(resolve, 2500);
             });
         }
 
-        const features = [];
-        roadDataMap.forEach((data, id) => {
+        // 轉換為 GeoJSON 圖層
+        const finalFeatures = Array.from(roadDataMap.values()).map(data => {
             const finalScore = Math.round((1 - data.invProb) * 1000) / 10;
-            features.push({ type: "Feature", geometry: data.geom, properties: { CHINESESTR: data.name, Intensity_Score: finalScore, Recent_Logs: data.logs.split('<br>').slice(0, 3).join('<br>') } });
+            return {
+                type: "Feature",
+                geometry: data.geom,
+                properties: {
+                    CHINESESTR: data.name,
+                    Intensity_Score: finalScore,
+                    Recent_Logs: data.logs.split('<br>').slice(0, 3).join('<br>')
+                }
+            };
         });
 
-        if (features.length === 0) {
-            status.innerText = "❌ 未找到數據，請確認 GitHub 檔案路徑";
+        if (finalFeatures.length === 0) {
+            status.innerText = "❌ 無法讀取數據 (請確認 GPKG 路徑)";
             setTimeout(() => status.style.display = 'none', 3000);
             return;
         }
 
-        geoLayer = L.geoJSON({ type: "FeatureCollection", features }, {
-            style: (f) => ({ weight: 6, opacity: 0.85, color: getColor(f.properties.Intensity_Score), lineCap: 'round' }),
+        geoLayer = L.geoJSON({ type: "FeatureCollection", features: finalFeatures }, {
+            style: (f) => ({
+                weight: 6, opacity: 0.85, color: getColor(f.properties.Intensity_Score), lineCap: 'round'
+            }),
             onEachFeature: (f, layer) => {
                 layer.bindPopup(`
                     <div class="popup-box">
                         <div class="popup-title">${f.properties.CHINESESTR}</div>
-                        <div class="prob-text">總結風險: ${f.properties.Intensity_Score}%</div>
-                        <div class="history-box"><strong>🕒 最新報案詳情：</strong><br>${f.properties.Recent_Logs || '暫無紀錄'}</div>
+                        <div class="prob-text">總計風險: ${f.properties.Intensity_Score}%</div>
+                        <div class="history-box">
+                            <strong>🕒 近期紀錄：</strong><br>${f.properties.Recent_Logs || '無'}
+                        </div>
                     </div>
                 `);
             }
         }).addTo(map);
 
-        status.innerText = "✅ 數據已就緒";
+        status.innerText = "✅ 數據加載成功";
         setTimeout(() => status.style.display = 'none', 1000);
     }
 
