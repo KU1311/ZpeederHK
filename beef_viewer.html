@@ -3,117 +3,98 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZpeederHK - 違停風險強制縮放版</title>
+    <title>ZpeederHK - 精確邊界定位版</title>
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
     <style>
         body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
         #map { height: 100vh; width: 100%; }
+        
         #status-indicator {
             position: absolute; top: 20px; left: 20px; z-index: 2000;
-            background: rgba(0,0,0,0.85); color: #00ff00; padding: 12px 20px;
-            border-radius: 4px; font-family: monospace; display: none;
+            background: rgba(0,0,0,0.9); color: #00ff00; padding: 15px;
+            border-radius: 8px; font-family: monospace; font-size: 14px;
+            display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            border: 1px solid #333; line-height: 1.6;
         }
+
         .control-panel {
             position: absolute; top: 20px; right: 20px; z-index: 1000;
-            background: white; padding: 15px; border-radius: 8px; width: 260px;
-            box-shadow: 0 2px 15px rgba(0,0,0,0.3);
+            background: white; padding: 15px; border-radius: 8px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.3); width: 260px;
         }
-        .mode-switch { display: flex; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
-        .mode-switch button { flex: 1; border: none; padding: 8px; cursor: pointer; background: #eee; font-weight: bold; }
-        .mode-switch button.active { background: #2c3e50; color: white; }
-        select, input[type="range"] { width: 100%; margin: 8px 0; }
-        .range-display { text-align: center; font-weight: bold; color: #e74c3c; margin-bottom: 10px; }
-        button#update-btn { width: 100%; padding: 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .history-box { background: #f8f9fa; border-left: 4px solid #2c3e50; padding: 8px; font-size: 11px; margin-top: 8px; line-height: 1.5; }
+
+        select, input[type="range"] { width: 100%; margin: 8px 0; cursor: pointer; }
+        .range-display { text-align: center; font-weight: bold; color: #e74c3c; margin-bottom: 10px; font-size: 18px; }
+
+        button#update-btn {
+            width: 100%; padding: 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; 
+            cursor: pointer; font-weight: bold; font-size: 14px; transition: 0.2s;
+        }
+        button#update-btn:hover { background: #1a252f; }
+        
+        .popup-box { min-width: 180px; }
+        .history-box { 
+            background: #f8f9fa; border-left: 4px solid #2c3e50; 
+            padding: 8px; font-size: 11px; margin-top: 8px; line-height: 1.4;
+        }
     </style>
 </head>
 <body>
 
-<div id="status-indicator">⏳ 初始化中...</div>
+<div id="status-indicator">⏳ 正在初始化邊界系統...</div>
 
 <div class="control-panel">
     <h3 style="margin:0 0 12px 0; text-align: center;">🚗 違停風險查詢</h3>
-    <div class="mode-switch">
-        <button id="btn-single" class="active" onclick="setMode('single')">單一時點</button>
-        <button id="btn-range" onclick="setMode('range')">範圍模式</button>
-    </div>
+    
+    <label style="font-size:12px; color:#666;">選擇日子：</label>
     <select id="dayType">
         <option value="Weekday">平日 (Weekday)</option>
         <option value="Sat">週六 (Sat)</option>
         <option value="Sun">週日 (Sun)</option>
     </select>
-    <div id="ui-single">
-        <input type="range" id="singleHour" min="0" max="23" value="15" oninput="hV1.innerText=this.value.padStart(2,'0')">
-        <div class="range-display"><span id="hV1">15</span>:00</div>
-    </div>
-    <div id="ui-range" style="display:none">
-        <input type="range" id="startHour" min="0" max="23" value="09" oninput="updateRangeText()"><br>
-        <input type="range" id="endHour" min="0" max="23" value="17" oninput="updateRangeText()">
-        <div class="range-display"><span id="rT">09:00 - 17:00</span></div>
-    </div>
+
+    <label style="font-size:12px; color:#666;">觀測時間：</label>
+    <input type="range" id="singleHour" min="0" max="23" value="15" oninput="hV1.innerText=this.value.padStart(2,'0')">
+    <div class="range-display"><span id="hV1">15</span>:00</div>
+
     <button id="update-btn" onclick="executeLoad()">手動更新數據</button>
 </div>
 
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@mapbox/leaflet-pip@1.1.0/leaflet-pip.js"></script>
 <script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
 
 <script>
-    // 1. 初始化地圖時設置強制縮放
-    const map = L.map('map', {
-        zoomSnap: 0.1 // 允許更精細的縮放控制
-    }).setView([22.3193, 114.1700], 18);
+    const map = L.map('map', { zoomSnap: 0.1 }).setView([22.3193, 114.1700], 18);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 20
-    }).addTo(map);
-
-    let currentMode = 'single';
     let activeLayers = [];
     let userMarker = null;
+    let districtBoundaryLayer = null;
 
-    function initUserLocation() {
+    // 1. 初始化系統並載入邊界
+    async function initSystem() {
         const status = document.getElementById('status-indicator');
         status.style.display = 'block';
-        status.innerText = "📍 正在請求定位權限...";
-
-        // 🛠️ 重點：setView 設為 false，改為在回調中手動強制 setView
-        map.locate({setView: false});
-
-        map.on('locationfound', function(e) {
-            status.innerText = "🎯 定位成功，強制放大至街道級別...";
+        
+        try {
+            // 🛠️ 修正路徑為你提供的 /assets/ 目錄
+            const response = await fetch('https://ku1311.github.io/ZpeederHK/assets/districts.geojson');
+            if (!response.ok) throw new Error('Network response was not ok');
+            const geojsonData = await response.json();
             
-            // 🛠️ 強制設定中心點與縮放級別 18
-            map.setView(e.latlng, 18, { animate: true });
-
-            if (userMarker) map.removeLayer(userMarker);
-            userMarker = L.circleMarker(e.latlng, {
-                radius: 7, fillColor: "#007bff", color: "#fff", weight: 2, opacity: 1, fillOpacity: 0.9
-            }).addTo(map).bindPopup("您的位置");
-            
-            executeLoad();
-        });
-
-        map.on('locationerror', function() {
-            status.innerText = "⚠️ 定位失敗，使用預設中心";
-            map.setView([22.3193, 114.1700], 18);
-            executeLoad(); 
-        });
-    }
-
-    function setMode(mode) {
-        currentMode = mode;
-        document.getElementById('btn-single').className = (mode === 'single' ? 'active' : '');
-        document.getElementById('btn-range').className = (mode === 'range' ? 'active' : '');
-        document.getElementById('ui-single').style.display = (mode === 'single' ? 'block' : 'none');
-        document.getElementById('ui-range').style.display = (mode === 'range' ? 'block' : 'none');
-    }
-
-    function updateRangeText() {
-        let s = document.getElementById('startHour').value.padStart(2,'0');
-        let e = document.getElementById('endHour').value.padStart(2,'0');
-        document.getElementById('rT').innerText = `${s}:00 - ${e}:00`;
+            districtBoundaryLayer = L.geoJSON(geojsonData);
+            console.log("✅ 18區邊界加載成功");
+            initUserLocation();
+        } catch (err) {
+            console.error("❌ 邊界加載失敗:", err);
+            status.innerHTML = "⚠️ 邊界數據加載失敗，將使用預設區域";
+            initUserLocation();
+        }
     }
 
     function getColor(d) {
@@ -121,86 +102,20 @@
                d >= 20 ? '#FC4E2A' : d > 0 ? '#FEB24C' : '#FFEDA0';
     }
 
-    async function executeLoad() {
-        const day = document.getElementById('dayType').value;
-        const status = document.getElementById('status-indicator');
-        
-        activeLayers.forEach(layer => map.removeLayer(layer));
-        activeLayers = [];
+    // 2. 定位功能
+    function initUserLocation() {
+        map.locate({setView: false});
 
-        let hours = [];
-        if (currentMode === 'single') {
-            hours.push(document.getElementById('singleHour').value);
-        } else {
-            let s = parseInt(document.getElementById('startHour').value);
-            let e = parseInt(document.getElementById('endHour').value);
-            if (e < s) [s, e] = [e, s];
-            for (let i = s; i <= e; i++) hours.push(i);
-        }
+        map.on('locationfound', (e) => {
+            map.setView(e.latlng, 18);
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.circleMarker(e.latlng, { 
+                radius: 8, fillColor: "#007bff", color: "#fff", weight: 3, fillOpacity: 1 
+            }).addTo(map).bindPopup("您的位置").openPopup();
+            executeLoad();
+        });
 
-        status.style.display = 'block';
-        status.innerText = `🚀 正在優先加載視角內數據...`;
-
-        // 獲取當前地圖範圍
-        const currentBounds = map.getBounds();
-
-        // 使用 async/await 確保有序加載
-        for (const h of hours) {
-            const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${h}h.gpkg?v=${Date.now()}`;
-            
-            // 創建圖層，但加入 filter 邏輯
-            const gpkgLayer = L.geoPackageFeatureLayer([], {
-                geoPackageUrl: url,
-                layerName: 'intensity',
-                // 🛠️ 關鍵優化 1：優先渲染判斷
-                filter: function(feature) {
-                    // 這裡不直接過濾掉（否則外面永遠出不來），而是配合渲染順序
-                    return true; 
-                },
-                style: (f) => {
-                    const isInView = currentBounds.contains(L.geoJSON(f).getBounds());
-                    return {
-                        weight: 6, 
-                        // 🛠️ 關鍵優化 2：非視角內的街道初始設為透明，等後續加載
-                        opacity: isInView ? (currentMode === 'single' ? 0.85 : 0.4) : 0, 
-                        color: getColor(f.properties.Intensity_Score),
-                        lineCap: 'round'
-                    };
-                },
-                onEachFeature: (f, layer) => {
-                    const p = f.properties;
-                    layer.bindPopup(`
-                        <div style="min-width:200px">
-                            <b>${p.CHINESESTR || '未知'}</b><br>
-                            機率: <span style="color:red;font-weight:bold">${p.Intensity_Score}%</span><br>
-                            <small>📍${p.P_Exact || 0}% | 🕸️${p.P_Network || 0}% | 🛣️${p.P_Street || 0}%</small>
-                            <div class="history-box">🕒 紀錄：<br>${p.Recent_Logs || '無'}</div>
-                        </div>
-                    `);
-
-                    // 🛠️ 關鍵優化 3：如果原本在視角外，0.8秒後才顯示出來（分流渲染壓力）
-                    const isInView = currentBounds.contains(layer.getBounds());
-                    if (!isInView) {
-                        setTimeout(() => {
-                            layer.setStyle({ opacity: currentMode === 'single' ? 0.85 : 0.4 });
-                        }, 800);
-                    }
-                }
-            }).addTo(map);
-            
-            activeLayers.push(gpkgLayer);
-            
-            // 讓瀏覽器喘口氣再 load 下一個小時
-            await new Promise(r => setTimeout(r, 100));
-        }
-
-        setTimeout(() => { status.style.display = 'none'; }, 2000);
-    }
-
-    window.onload = () => {
-        updateRangeText();
-        initUserLocation();
-    };
-</script>
-</body>
-</html>
+        map.on('locationerror', () => {
+            console.warn("定位失敗，使用地圖中心點加載");
+            executeLoad();
+        });
