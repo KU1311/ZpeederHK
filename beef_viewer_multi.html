@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZpeederHK - 違停風險地圖</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
+        #map { height: 100vh; width: 100%; }
+        #status-indicator {
+            position: absolute; top: 20px; left: 20px; z-index: 2000;
+            background: rgba(0,0,0,0.85); color: #00ff00; padding: 12px 20px;
+            border-radius: 4px; font-family: monospace; display: none;
+        }
+        .control-panel {
+            position: absolute; top: 20px; right: 20px; z-index: 1000;
+            background: white; padding: 15px; border-radius: 8px; width: 260px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.3);
+        }
+        .mode-switch { display: flex; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
+        .mode-switch button { flex: 1; border: none; padding: 8px; cursor: pointer; background: #eee; }
+        .mode-switch button.active { background: #2c3e50; color: white; }
+        select, input[type="range"] { width: 100%; margin: 8px 0; }
+        .range-display { text-align: center; font-weight: bold; color: #e74c3c; margin-bottom: 10px; }
+        button#update-btn {
+            width: 100%; padding: 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; 
+            cursor: pointer; font-weight: bold;
+        }
+        .popup-box { min-width: 240px; }
+        .history-box { background: #f8f9fa; border-left: 4px solid #2c3e50; padding: 8px; font-size: 11px; margin-top: 8px; }
+        .legend { line-height: 18px; background: white; padding: 10px; border-radius: 5px; }
+        .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
+    </style>
+</head>
+<body>
+
+<div id="status-indicator">⏳ 數據同步中...</div>
+
+<div class="control-panel">
+    <h3 style="margin:0 0 10px 0; text-align: center;">🚗 違停風險查詢</h3>
+    
+    <div class="mode-switch">
+        <button id="btn-single" class="active" onclick="setMode('single')">單一時點</button>
+        <button id="btn-range" onclick="setMode('range')">範圍模式</button>
+    </div>
+
+    <select id="dayType">
+        <option value="Weekday">平日 (Weekday)</option>
+        <option value="Sat">週六 (Sat)</option>
+        <option value="Sun">週日 (Sun)</option>
+    </select>
+
+    <div id="ui-single">
+        <input type="range" id="singleHour" min="0" max="23" value="15" oninput="hV1.innerText=this.value.padStart(2,'0')">
+        <div class="range-display"><span id="hV1">15</span>:00</div>
+    </div>
+
+    <div id="ui-range" style="display:none">
+        <label style="font-size:11px">開始時間</label>
+        <input type="range" id="startHour" min="0" max="23" value="9" oninput="updateRangeText()">
+        <label style="font-size:11px">結束時間</label>
+        <input type="range" id="endHour" min="0" max="23" value="17" oninput="updateRangeText()">
+        <div class="range-display"><span id="rT">09:00 - 17:00</span></div>
+    </div>
+
+    <button id="update-btn" onclick="executeLoad()">更新地圖</button>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
+
+<script>
+    const map = L.map('map').setView([22.3193, 114.1694], 14);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+    let currentMode = 'single';
+    let activeLayers = [];
+
+    function setMode(mode) {
+        currentMode = mode;
+        document.getElementById('btn-single').className = (mode === 'single' ? 'active' : '');
+        document.getElementById('btn-range').className = (mode === 'range' ? 'active' : '');
+        document.getElementById('ui-single').style.display = (mode === 'single' ? 'block' : 'none');
+        document.getElementById('ui-range').style.display = (mode === 'range' ? 'block' : 'none');
+    }
+
+    function updateRangeText() {
+        let s = document.getElementById('startHour').value.padStart(2,'0');
+        let e = document.getElementById('endHour').value.padStart(2,'0');
+        document.getElementById('rT').innerText = `${s}:00 - ${e}:00`;
+    }
+
+    function getColor(d) {
+        return d >= 80 ? '#800026' : d >= 60 ? '#BD0026' : d >= 40 ? '#E31A1C' : 
+               d >= 20 ? '#FC4E2A' : d > 0 ? '#FEB24C' : '#FFEDA0';
+    }
+
+    function executeLoad() {
+        const day = document.getElementById('dayType').value;
+        const status = document.getElementById('status-indicator');
+        
+        // 1. 清除所有舊圖層
+        activeLayers.forEach(layer => map.removeLayer(layer));
+        activeLayers = [];
+
+        // 2. 確定要加載的小時
+        let hours = [];
+        if (currentMode === 'single') {
+            hours.push(document.getElementById('singleHour').value);
+        } else {
+            let s = parseInt(document.getElementById('startHour').value);
+            let e = parseInt(document.getElementById('endHour').value);
+            if (e < s) [s, e] = [e, s];
+            for (let i = s; i <= e; i++) hours.push(i);
+        }
+
+        status.style.display = 'block';
+        status.innerText = `⏳ 正在載入數據...`;
+
+        // 3. 循環加載
+        hours.forEach(h => {
+            const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${h}h.gpkg?v=${Date.now()}`;
+            
+            const gpkgLayer = L.geoPackageFeatureLayer([], {
+                geoPackageUrl: url,
+                layerName: 'intensity',
+                style: (f) => ({
+                    weight: 6, 
+                    opacity: currentMode === 'single' ? 0.85 : 0.4, 
+                    color: getColor(f.properties.Intensity_Score),
+                    lineCap: 'round'
+                }),
+                onEachFeature: (f, layer) => {
+                    const p = f.properties;
+                    // 🛠️ 在這裡重新加入 Source 分佈的 HTML
+                    layer.bindPopup(`
+                        <div class="popup-box">
+                            <div class="popup-title">${p.CHINESESTR || '未知路段'}</div>
+                            <div style="font-size:20px; color:#e74c3c; font-weight:bold; margin-bottom:5px;">
+                                機率: ${p.Intensity_Score}%
+                            </div>
+                            <div style="font-size:12px; color:#666; margin-bottom:10px; border-bottom: 1px dashed #ccc; padding-bottom:5px;">
+                                📍${p.P_Exact || 0}% | 🕸️${p.P_Network || 0}% | 🛣️${p.P_Street || 0}%
+                            </div>
+                            <div class="history-box">
+                                <strong>🕒 最近報案紀錄：</strong><br>
+                                <div style="margin-top:5px; line-height:1.6;">${p.Recent_Logs || '暫無詳細紀錄'}</div>
+                            </div>
+                        </div>
+                    `);
+                }
+            }).addTo(map);
+
+            activeLayers.push(gpkgLayer);
+        });
+
+        setTimeout(() => { status.style.display = 'none'; }, 1500);
+    }
+
+    const legend = L.control({position: 'bottomleft'});
+    legend.onAdd = function () {
+        const div = L.DomUtil.create('div', 'legend'), grades = [0, 20, 40, 60, 80];
+        div.innerHTML = '<b>單時段風險</b><br>';
+        for (let i = 0; i < grades.length; i++) {
+            div.innerHTML += `<i style="background:${getColor(grades[i] + 1)}"></i> ${grades[i]}%${grades[i+1] ? '&ndash;'+grades[i+1]+'%' : '+'}<br>`;
+        }
+        return div;
+    };
+    legend.addTo(map);
+
+    window.onload = executeLoad;
+</script>
+</body>
+</html>
