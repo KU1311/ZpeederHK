@@ -3,49 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZpeederHK - 違停風險動態地圖</title>
-    
+    <title>ZpeederHK - 違停風險強制縮放版</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
     <style>
         body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
         #map { height: 100vh; width: 100%; }
-        
         #status-indicator {
             position: absolute; top: 20px; left: 20px; z-index: 2000;
             background: rgba(0,0,0,0.85); color: #00ff00; padding: 12px 20px;
-            border-radius: 4px; font-family: monospace; font-size: 13px;
-            display: none; box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            border-radius: 4px; font-family: monospace; display: none;
         }
-
         .control-panel {
             position: absolute; top: 20px; right: 20px; z-index: 1000;
-            background: white; padding: 15px; border-radius: 8px;
-            box-shadow: 0 2px 15px rgba(0,0,0,0.3); width: 260px;
+            background: white; padding: 15px; border-radius: 8px; width: 260px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.3);
         }
-
         .mode-switch { display: flex; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
         .mode-switch button { flex: 1; border: none; padding: 8px; cursor: pointer; background: #eee; font-weight: bold; }
         .mode-switch button.active { background: #2c3e50; color: white; }
-
-        select, input[type="range"] { width: 100%; margin: 8px 0; cursor: pointer; }
-        .range-display { text-align: center; font-weight: bold; color: #e74c3c; margin-bottom: 10px; font-size: 15px; }
-
-        button#update-btn {
-            width: 100%; padding: 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; 
-            cursor: pointer; font-weight: bold; transition: background 0.2s;
-        }
-        button#update-btn:hover { background: #1a252f; }
-
-        .popup-box { min-width: 240px; }
-        .popup-title { font-weight: bold; font-size: 16px; border-bottom: 2px solid #2c3e50; padding-bottom: 5px; margin-bottom: 8px; }
-        .history-box { 
-            background: #f8f9fa; border-left: 4px solid #2c3e50; 
-            padding: 8px; font-size: 11px; margin-top: 8px; line-height: 1.5;
-        }
-        
-        .legend { line-height: 18px; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
+        select, input[type="range"] { width: 100%; margin: 8px 0; }
+        .range-display { text-align: center; font-weight: bold; color: #e74c3c; margin-bottom: 10px; }
+        button#update-btn { width: 100%; padding: 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .history-box { background: #f8f9fa; border-left: 4px solid #2c3e50; padding: 8px; font-size: 11px; margin-top: 8px; line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -54,33 +33,24 @@
 
 <div class="control-panel">
     <h3 style="margin:0 0 12px 0; text-align: center;">🚗 違停風險查詢</h3>
-    
     <div class="mode-switch">
         <button id="btn-single" class="active" onclick="setMode('single')">單一時點</button>
         <button id="btn-range" onclick="setMode('range')">範圍模式</button>
     </div>
-
-    <label style="font-size:12px; color:#666;">選擇日子：</label>
     <select id="dayType">
         <option value="Weekday">平日 (Weekday)</option>
         <option value="Sat">週六 (Sat)</option>
         <option value="Sun">週日 (Sun)</option>
     </select>
-
     <div id="ui-single">
-        <label style="font-size:12px; color:#666;">觀測時間：</label>
         <input type="range" id="singleHour" min="0" max="23" value="15" oninput="hV1.innerText=this.value.padStart(2,'0')">
         <div class="range-display"><span id="hV1">15</span>:00</div>
     </div>
-
     <div id="ui-range" style="display:none">
-        <label style="font-size:12px; color:#666;">開始時間：</label>
-        <input type="range" id="startHour" min="0" max="23" value="09" oninput="updateRangeText()">
-        <label style="font-size:12px; color:#666;">結束時間：</label>
+        <input type="range" id="startHour" min="0" max="23" value="09" oninput="updateRangeText()"><br>
         <input type="range" id="endHour" min="0" max="23" value="17" oninput="updateRangeText()">
         <div class="range-display"><span id="rT">09:00 - 17:00</span></div>
     </div>
-
     <button id="update-btn" onclick="executeLoad()">手動更新數據</button>
 </div>
 
@@ -90,8 +60,11 @@
 <script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
 
 <script>
-    // 1. 初始化地圖，設置較大的預設縮放值 (18)
-    const map = L.map('map').setView([22.3193, 114.1700], 20);
+    // 1. 初始化地圖時設置強制縮放
+    const map = L.map('map', {
+        zoomSnap: 0.1 // 允許更精細的縮放控制
+    }).setView([22.3193, 114.1700], 18);
+
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 20
     }).addTo(map);
@@ -100,34 +73,35 @@
     let activeLayers = [];
     let userMarker = null;
 
-    // --- 定位功能 ---
     function initUserLocation() {
         const status = document.getElementById('status-indicator');
         status.style.display = 'block';
         status.innerText = "📍 正在請求定位權限...";
 
-        // 🛠️ 設置定位成功後的縮放級別為 18 (最高級別之一)
-        map.locate({setView: true, maxZoom: 20});
+        // 🛠️ 重點：setView 設為 false，改為在回調中手動強制 setView
+        map.locate({setView: false});
 
         map.on('locationfound', function(e) {
-            status.innerText = "🎯 已定位，加載附近數據...";
+            status.innerText = "🎯 定位成功，強制放大至街道級別...";
+            
+            // 🛠️ 強制設定中心點與縮放級別 18
+            map.setView(e.latlng, 18, { animate: true });
+
             if (userMarker) map.removeLayer(userMarker);
             userMarker = L.circleMarker(e.latlng, {
                 radius: 7, fillColor: "#007bff", color: "#fff", weight: 2, opacity: 1, fillOpacity: 0.9
-            }).addTo(map).bindPopup("您的當前位置");
+            }).addTo(map).bindPopup("您的位置");
+            
             executeLoad();
         });
 
         map.on('locationerror', function() {
-            status.innerText = "⚠️ 無法定位，已切換至預設區域";
-            // 🛠️ 即使失敗，也跳轉到預設位置並維持 18 縮放
-            map.setView([22.3193, 114.1700], 20);
-            setTimeout(() => { status.style.display = 'none'; }, 3000);
+            status.innerText = "⚠️ 定位失敗，使用預設中心";
+            map.setView([22.3193, 114.1700], 18);
             executeLoad(); 
         });
     }
 
-    // --- 界面控制 ---
     function setMode(mode) {
         currentMode = mode;
         document.getElementById('btn-single').className = (mode === 'single' ? 'active' : '');
@@ -147,7 +121,6 @@
                d >= 20 ? '#FC4E2A' : d > 0 ? '#FEB24C' : '#FFEDA0';
     }
 
-    // --- 數據加載 ---
     function executeLoad() {
         const day = document.getElementById('dayType').value;
         const status = document.getElementById('status-indicator');
@@ -166,7 +139,7 @@
         }
 
         status.style.display = 'block';
-        status.innerText = `⏳ 載入中 (${hours.length} 個時段)...`;
+        status.innerText = `⏳ 載入時段數據...`;
 
         hours.forEach(h => {
             const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${h}h.gpkg?v=${Date.now()}`;
@@ -183,18 +156,11 @@
                 onEachFeature: (f, layer) => {
                     const p = f.properties;
                     layer.bindPopup(`
-                        <div class="popup-box">
-                            <div class="popup-title">${p.CHINESESTR || '未知路段'}</div>
-                            <div style="font-size:20px; color:#e74c3c; font-weight:bold; margin-bottom:5px;">
-                                機率: ${p.Intensity_Score}%
-                            </div>
-                            <div style="font-size:12px; color:#666; margin-bottom:10px; border-bottom: 1px dashed #ccc; padding-bottom:5px;">
-                                📍${p.P_Exact || 0}% | 🕸️${p.P_Network || 0}% | 🛣️${p.P_Street || 0}%
-                            </div>
-                            <div class="history-box">
-                                <strong>🕒 最近報案紀錄：</strong><br>
-                                <div style="margin-top:5px; line-height:1.6;">${p.Recent_Logs || '暫無詳細紀錄'}</div>
-                            </div>
+                        <div style="min-width:200px">
+                            <b>${p.CHINESESTR || '未知'}</b><br>
+                            機率: <span style="color:red;font-weight:bold">${p.Intensity_Score}%</span><br>
+                            <small>📍${p.P_Exact || 0}% | 🕸️${p.P_Network || 0}% | 🛣️${p.P_Street || 0}%</small>
+                            <div class="history-box">🕒 紀錄：<br>${p.Recent_Logs || '無'}</div>
                         </div>
                     `);
                 }
@@ -202,7 +168,7 @@
             activeLayers.push(gpkgLayer);
         });
 
-        setTimeout(() => { status.style.display = 'none'; }, 2000);
+        setTimeout(() => { status.style.display = 'none'; }, 1500);
     }
 
     window.onload = () => {
