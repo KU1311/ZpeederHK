@@ -73,12 +73,52 @@
 <script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
 
 <script>
-    const map = L.map('map').setView([22.3193, 114.1694], 14);
+    // 1. 初始化地圖（先設一個基本中心點，但暫不加載數據）
+    const map = L.map('map').setView([22.3193, 114.1700], 12); 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
     let currentMode = 'single';
     let activeLayers = [];
+    let userMarker = null;
 
+    // --- 新增：定位功能邏輯 ---
+    function initUserLocation() {
+        const status = document.getElementById('status-indicator');
+        status.style.display = 'block';
+        status.innerText = "📍 正在獲取您的位置...";
+
+        // 嘗試獲取用戶位置
+        map.locate({setView: true, maxZoom: 16});
+
+        // 定位成功
+        map.on('locationfound', function(e) {
+            status.innerText = "🎯 已定位，正在加載附近數據...";
+            
+            // 在用戶位置加個小藍點
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.circleMarker(e.latlng, {
+                radius: 8,
+                fillColor: "#3388ff",
+                color: "#fff",
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.8
+            }).addTo(map).bindPopup("您在這裡").openPopup();
+
+            // 定位成功後才開始加載數據
+            executeLoad();
+        });
+
+        // 定位失敗（例如用戶拒絕或瀏覽器不支援）
+        map.on('locationerror', function(e) {
+            console.warn("定位失敗:", e.message);
+            status.innerText = "⚠️ 無法獲取位置，顯示預設區域";
+            map.setView([22.3193, 114.1700], 14); // 回到尖沙咀/旺角一帶
+            executeLoad(); // 依然加載數據
+        });
+    }
+
+    // --- 原有邏輯保持穩定 ---
     function setMode(mode) {
         currentMode = mode;
         document.getElementById('btn-single').className = (mode === 'single' ? 'active' : '');
@@ -102,11 +142,9 @@
         const day = document.getElementById('dayType').value;
         const status = document.getElementById('status-indicator');
         
-        // 1. 清除所有舊圖層
         activeLayers.forEach(layer => map.removeLayer(layer));
         activeLayers = [];
 
-        // 2. 確定要加載的小時
         let hours = [];
         if (currentMode === 'single') {
             hours.push(document.getElementById('singleHour').value);
@@ -118,9 +156,8 @@
         }
 
         status.style.display = 'block';
-        status.innerText = `⏳ 正在載入數據...`;
+        status.innerText = `⏳ 載入時段中...`;
 
-        // 3. 循環加載
         hours.forEach(h => {
             const url = `https://ku1311.github.io/ZpeederHK/dayhour_score_output/Intensity_${day}_${h}h.gpkg?v=${Date.now()}`;
             
@@ -135,7 +172,6 @@
                 }),
                 onEachFeature: (f, layer) => {
                     const p = f.properties;
-                    // 🛠️ 在這裡重新加入 Source 分佈的 HTML
                     layer.bindPopup(`
                         <div class="popup-box">
                             <div class="popup-title">${p.CHINESESTR || '未知路段'}</div>
@@ -146,19 +182,24 @@
                                 📍${p.P_Exact || 0}% | 🕸️${p.P_Network || 0}% | 🛣️${p.P_Street || 0}%
                             </div>
                             <div class="history-box">
-                                <strong>🕒 最近報案紀錄：</strong><br>
-                                <div style="margin-top:5px; line-height:1.6;">${p.Recent_Logs || '暫無詳細紀錄'}</div>
+                                <strong>🕒 最近紀錄：</strong><br>
+                                <div style="margin-top:5px; line-height:1.6;">${p.Recent_Logs || '無詳細紀錄'}</div>
                             </div>
                         </div>
                     `);
                 }
             }).addTo(map);
-
             activeLayers.push(gpkgLayer);
         });
 
-        setTimeout(() => { status.style.display = 'none'; }, 1500);
+        setTimeout(() => { status.style.display = 'none'; }, 2000);
     }
+
+    // 🛠️ 關鍵：修改入口函數
+    window.onload = () => {
+        updateRangeText();
+        initUserLocation(); // 一開始改為執行定位
+    };
 
     const legend = L.control({position: 'bottomleft'});
     legend.onAdd = function () {
