@@ -98,7 +98,7 @@
         
         try {
             // 讀取你提供的 districts.geojson 路徑
-            const response = await fetch('https://ku1311.github.io/ZpeederHK/assests/districts.geojson');
+            const response = await fetch('https://ku1311.github.io/ZpeederHK/assets/districts.geojson');
             if (!response.ok) throw new Error('GeoJSON fetch failed');
             const geojsonData = await response.json();
             
