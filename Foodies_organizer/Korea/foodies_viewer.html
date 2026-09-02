@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>釜山旅遊地圖與店家清單</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { display: flex; flex-direction: column; height: 100vh; background-color: #f8f9fa; color: #333; }
+        
+        /* 地圖區域 */
+        #map { height: 45vh; width: 100%; z-index: 1; }
+        
+        /* 控制與篩選區 */
+        .controls { padding: 12px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.1); z-index: 2; }
+        .filter-group { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+        select, input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; flex: 1; min-width: 120px; outline: none; }
+        button { padding: 8px 14px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; white-space: nowrap; }
+        button:active { background: #0056b3; }
+
+        /* 店家列表區域 */
+        .list-container { flex: 1; overflow-y: auto; padding: 12px; -webkit-overflow-scrolling: touch; }
+        .card { background: white; border-radius: 10px; padding: 14px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); transition: transform 0.1s; }
+        .card:active { transform: scale(0.99); }
+        .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+        .card-title { font-size: 16px; font-weight: bold; color: #1a1a1a; }
+        .tag { background: #e9ecef; color: #495057; font-size: 12px; padding: 2px 8px; border-radius: 12px; }
+        .card-district { font-size: 13px; color: #6c757d; margin-bottom: 6px; }
+        .card-remarks { font-size: 13px; color: #444; line-height: 1.4; margin-bottom: 8px; }
+        .card-footer { font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+        .card-footer a { color: #007bff; text-decoration: none; word-break: break-all; }
+        
+        /* Popup 樣式 */
+        .popup-title { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+        .popup-category { font-size: 12px; color: #007bff; font-weight: bold; margin-bottom: 4px; }
+        .popup-remarks { font-size: 12px; color: #555; margin-bottom: 6px; }
+        .popup-link { font-size: 12px; display: block; color: #007bff; text-decoration: underline; margin-top: 4px; }
+
+        /* 手機板 Layout 優化 */
+        @media (min-width: 768px) {
+            body { flex-direction: row; }
+            #map { height: 100vh; flex: 1; }
+            .sidebar { width: 420px; height: 100vh; display: flex; flex-direction: column; background: #fff; box-shadow: 2px 0 8px rgba(0,0,0,0.1); z-index: 2; }
+            .list-container { flex: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar" style="display: flex; flex-direction: column; flex: 1;">
+        <div class="controls">
+            <div class="filter-group">
+                <input type="text" id="searchInput" placeholder="搜尋店名、區域、關鍵字..." oninput="filterAndRender()">
+                <select id="categoryFilter" onchange="filterAndRender()">
+                    <option value="ALL">全部分類</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <select id="districtFilter" onchange="filterAndRender()">
+                    <option value="ALL">全部區域</option>
+                </select>
+                <select id="sortSelect" onchange="filterAndRender()">
+                    <option value="DEFAULT">預設排序</option>
+                    <option value="NAME">名稱排序</option>
+                    <option value="DIST">距離我的位置 (近到遠)</option>
+                </select>
+                <button onclick="locateUser()">定位我的位置</button>
+            </div>
+        </div>
+
+        <div class="list-container" id="shopList"></div>
+    </div>
+
+    <div id="map"></div>
+
+<script>
+    // -------------------------------------------------------------
+    // 【重要】CSV 資料讀取位置：
+    // 如果上傳至 GitHub Pages，請將 CSV 與 index.html 放在同一個目錄，
+    // 並填入相對路徑（例如: './busan_locations_expanded.csv'），或你的 Raw GitHub URL。
+    // -------------------------------------------------------------
+    const CSV_URL = './busan_locations_expanded.csv';
+
+    let map;
+    let markersLayer = L.layerGroup();
+    let userMarker = null;
+    let allData = [];
+    let userCoords = null;
+
+    // 初始化地圖
+    function initMap() {
+        map = L.map('map').setView([35.1795543, 129.0756416], 11);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+        markersLayer.addTo(map);
+    }
+
+    // 載入與解析 CSV
+    function loadCSV() {
+        Papa.parse(CSV_URL, {
+            download: true,
+            header: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                allData = results.data.filter(item => item['Shop name'] && item['lat'] && item['long']);
+                populateFilters();
+                filterAndRender();
+            },
+            error: function(err) {
+                console.error("CSV 讀取失敗:", err);
+                alert("無法載入 CSV 資料，請檢查 CSV_URL 設定。");
+            }
+        });
+    }
+
+    // 動態塞入分類與區域選項
+    function populateFilters() {
+        const categories = new Set();
+        const districts = new Set();
+
+        allData.forEach(item => {
+            if (item.category) categories.add(item.category.trim());
+            if (item.district) districts.add(item.district.trim());
+        });
+
+        const catSelect = document.getElementById('categoryFilter');
+        categories.forEach(cat => {
+            catSelect.innerHTML += `<option value="${cat}">${cat}</option>`;
+        });
+
+        const distSelect = document.getElementById('districtFilter');
+        districts.forEach(dist => {
+            distSelect.innerHTML += `<option value="${dist}">${dist}</option>`;
+        });
+    }
+
+    // 計算兩點間距離 (Haversine formula, 單位: km)
+    function getDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    }
+
+    // 篩選、排序與渲染
+    function filterAndRender() {
+        const searchText = document.getElementById('searchInput').value.toLowerCase();
+        const selectedCat = document.getElementById('categoryFilter').value;
+        const selectedDist = document.getElementById('districtFilter').value;
+        const sortBy = document.getElementById('sortSelect').value;
+
+        // 篩選
+        let filtered = allData.filter(item => {
+            const matchesSearch = (item['Shop name'] || '').toLowerCase().includes(searchText) ||
+                                  (item['remarks'] || '').toLowerCase().includes(searchText) ||
+                                  (item['district'] || '').toLowerCase().includes(searchText);
+            const matchesCat = selectedCat === 'ALL' || item.category === selectedCat;
+            const matchesDist = selectedDist === 'ALL' || item.district === selectedDist;
+
+            return matchesSearch && matchesCat && matchesDist;
+        });
+
+        // 排序
+        if (sortBy === 'NAME') {
+            filtered.sort((a, b) => a['Shop name'].localeCompare(b['Shop name'], 'zh-Hant'));
+        } else if (sortBy === 'DIST' && userCoords) {
+            filtered.forEach(item => {
+                item._dist = getDistance(userCoords.lat, userCoords.lng, parseFloat(item.lat), parseFloat(item.long));
+            });
+            filtered.sort((a, b) => a._dist - b._dist);
+        }
+
+        renderMapAndList(filtered);
+    }
+
+    // 渲染地圖圖標與列表
+    function renderMapAndList(data) {
+        markersLayer.clearLayers();
+        const listContainer = document.getElementById('shopList');
+        listContainer.innerHTML = '';
+
+        const bounds = [];
+
+        data.forEach(item => {
+            const lat = parseFloat(item.lat);
+            const lng = parseFloat(item.long);
+            if (isNaN(lat) || isNaN(lng)) return;
+
+            bounds.push([lat, lng]);
+
+            // 處理可點擊的連結（支援多條連結換行）
+            const links = (item['recommended by'] || '').split('\n').filter(l => l.trim() !== '');
+            let linksHTML = links.map(link => `<a href="${link.trim()}" target="_blank" rel="noopener">IG 推薦連結</a>`).join('<br>');
+
+            // 1. 地圖 Popup
+            const popupContent = `
+                <div class="popup-title">${item['Shop name']}</div>
+                <div class="popup-category">${item.category || ''} | ${item.district || ''}</div>
+                <div class="popup-remarks">${item.remarks || ''}</div>
+                ${linksHTML ? `<div>${linksHTML}</div>` : ''}
+            `;
+
+            const marker = L.marker([lat, lng]).bindPopup(popupContent);
+            markersLayer.addLayer(marker);
+
+            // 2. 側邊列表卡片
+            const card = document.createElement('div');
+            card.className = 'card';
+            
+            let distDisplay = item._dist ? `<span style="color:#28a745; font-weight:bold;"> (${item._dist.toFixed(1)} km)</span>` : '';
+
+            card.innerHTML = `
+                <div class="card-header">
+                    <div class="card-title">${item['Shop name']}${distDisplay}</div>
+                    <span class="tag">${item.category || '未分類'}</span>
+                </div>
+                <div class="card-district">📍 ${item.city || ''} ${item.district || ''}</div>
+                <div class="card-remarks">${item.remarks || ''}</div>
+                <div class="card-footer">${linksHTML}</div>
+            `;
+
+            // 點擊卡片跳轉至地圖該點並開啟 Popup
+            card.onclick = (e) => {
+                if (e.target.tagName !== 'A') {
+                    map.setView([lat, lng], 16);
+                    marker.openPopup();
+                }
+            };
+
+            listContainer.appendChild(card);
+        });
+
+        // 自動調整地圖視野 (Default Zoom & Center)，讓所有符合條件的點都可見
+        if (bounds.length > 0) {
+            map.fitBounds(bounds, { padding: [30, 30] });
+        }
+    }
+
+    // 取得使用者 Current Location
+    function locateUser() {
+        if (!navigator.geolocation) {
+            alert('您的瀏覽器不支援定位功能');
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(position => {
+            const { latitude, longitude } = position.coords;
+            userCoords = { lat: latitude, lng: longitude };
+
+            if (userMarker) map.removeLayer(userMarker);
+
+            // 標示使用者位置（藍色圓圈）
+            userMarker = L.circleMarker([latitude, longitude], {
+                radius: 8,
+                fillColor: '#007bff',
+                color: '#ffffff',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.8
+            }).addTo(map).bindPopup('<b>你的目前位置</b>').openPopup();
+
+            // 將地圖移動至目前位置
+            map.setView([latitude, longitude], 13);
+
+            // 切換成距離排序並重新渲染
+            document.getElementById('sortSelect').value = 'DIST';
+            filterAndRender();
+
+        }, err => {
+            alert('無法取得您的位置：' + err.message);
+        });
+    }
+
+    // 頁面初始化
+    window.onload = () => {
+        initMap();
+        loadCSV();
+    };
+</script>
+
+</body>
+</html>
