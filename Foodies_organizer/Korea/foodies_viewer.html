@@ -107,7 +107,7 @@
     let allData = [];
     let userCoords = null;
 
-    // 初始化地圖：Default 改為 OpenStreetMap (OSM)
+    // 初始化地圖：Default OpenStreetMap (OSM)
     function initMap() {
         const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
@@ -126,7 +126,6 @@
             attribution: '© CARTO'
         });
 
-        // 預設載入 OSM
         map = L.map('map', {
             center: [35.1795, 129.0756],
             zoom: 11,
@@ -159,7 +158,6 @@
             toggleBtn.classList.remove('active');
         }
 
-        // 重新調整地圖尺寸避免變形
         setTimeout(() => map.invalidateSize(), 200);
     }
 
@@ -181,24 +179,31 @@
         });
     }
 
-    // 填充選單
+    // 動態建置選單並計算每個分類/區域的數量
     function populateFilters() {
-        const categories = new Set();
-        const districts = new Set();
+        const catCounts = {};
+        const distCounts = {};
 
         allData.forEach(item => {
-            if (item.category) categories.add(item.category.trim());
-            if (item.district) districts.add(item.district.trim());
+            const cat = item.category ? item.category.trim() : '未分類';
+            const dist = item.district ? item.district.trim() : '未分類';
+
+            catCounts[cat] = (catCounts[cat] || 0) + 1;
+            distCounts[dist] = (distCounts[dist] || 0) + 1;
         });
 
+        // 1. 填寫分類下拉選單 (含 Count)
         const catSelect = document.getElementById('categoryFilter');
-        categories.forEach(cat => {
-            catSelect.innerHTML += `<option value="${cat}">${cat}</option>`;
+        catSelect.innerHTML = `<option value="ALL">全部分類 (${allData.length})</option>`;
+        Object.keys(catCounts).forEach(cat => {
+            catSelect.innerHTML += `<option value="${cat}">${cat} (${catCounts[cat]})</option>`;
         });
 
+        // 2. 填寫區域下拉選單 (含 Count)
         const distSelect = document.getElementById('districtFilter');
-        districts.forEach(dist => {
-            distSelect.innerHTML += `<option value="${dist}">${dist}</option>`;
+        distSelect.innerHTML = `<option value="ALL">全部區域 (${allData.length})</option>`;
+        Object.keys(distCounts).forEach(dist => {
+            distSelect.innerHTML += `<option value="${dist}">${dist} (${distCounts[dist]})</option>`;
         });
     }
 
