@@ -12,20 +12,27 @@
 
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        body { display: flex; flex-direction: column; height: 100vh; background-color: #f8f9fa; color: #333; }
+        body { display: flex; flex-direction: column; height: 100vh; background-color: #f8f9fa; color: #333; overflow: hidden; }
         
-        /* 地圖區域 */
-        #map { height: 45vh; width: 100%; z-index: 1; }
-        
-        /* 控制與篩選區 */
-        .controls { padding: 12px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.1); z-index: 2; }
+        /* 側邊欄與篩選控制區 */
+        .sidebar { display: flex; flex-direction: column; width: 100%; z-index: 2; background: #fff; }
+        .controls { padding: 12px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.1); z-index: 3; }
         .filter-group { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-        select, input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; flex: 1; min-width: 120px; outline: none; }
-        button { padding: 8px 14px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; white-space: nowrap; }
-        button:active { background: #0056b3; }
+        .filter-group:last-child { margin-bottom: 0; }
+        select, input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; flex: 1; min-width: 110px; outline: none; }
+        
+        /* 按鈕樣式 */
+        .btn { padding: 8px 12px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; white-space: nowrap; font-weight: 500; }
+        .btn:active { background: #0056b3; }
+        .btn-toggle { background: #6c757d; }
+        .btn-toggle.active { background: #28a745; }
 
-        /* 店家列表區域 */
-        .list-container { flex: 1; overflow-y: auto; padding: 12px; -webkit-overflow-scrolling: touch; }
+        /* 手機版預設：地圖滿版，列表可展開折疊 */
+        #map { flex: 1; width: 100%; z-index: 1; }
+        .list-container { display: none; max-height: 40vh; overflow-y: auto; padding: 12px; background: #f8f9fa; border-top: 1px solid #eee; -webkit-overflow-scrolling: touch; }
+        .list-container.open { display: block; }
+
+        /* 店家卡片樣式 */
         .card { background: white; border-radius: 10px; padding: 14px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); transition: transform 0.1s; cursor: pointer; }
         .card:active { transform: scale(0.99); }
         .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
@@ -46,22 +53,23 @@
         .popup-actions a.gmap-link { color: #28a745; font-weight: bold; }
         .popup-actions a.ig-link { color: #007bff; }
 
-        /* 手機與電腦 RWD */
+        /* 電腦/平板雙欄 Layout */
         @media (min-width: 768px) {
             body { flex-direction: row; }
             #map { height: 100vh; flex: 1; }
-            .sidebar { width: 420px; height: 100vh; display: flex; flex-direction: column; background: #fff; box-shadow: 2px 0 8px rgba(0,0,0,0.1); z-index: 2; }
-            .list-container { flex: 1; }
+            .sidebar { width: 420px; height: 100vh; box-shadow: 2px 0 8px rgba(0,0,0,0.1); }
+            .list-container { display: block !important; max-height: none; flex: 1; border-top: none; }
+            .btn-toggle { display: none; } /* 電腦版隱藏切換按鈕 */
         }
     </style>
 </head>
 <body>
 
-    <div class="sidebar" style="display: flex; flex-direction: column; flex: 1;">
+    <div class="sidebar">
         <!-- 控制與篩選面板 -->
         <div class="controls">
             <div class="filter-group">
-                <input type="text" id="searchInput" placeholder="搜尋店名、區域、關鍵字..." oninput="filterAndRender()">
+                <input type="text" id="searchInput" placeholder="搜尋店名、區域..." oninput="filterAndRender()">
                 <select id="categoryFilter" onchange="filterAndRender()">
                     <option value="ALL">全部分類</option>
                 </select>
@@ -73,21 +81,24 @@
                 <select id="sortSelect" onchange="filterAndRender()">
                     <option value="DEFAULT">預設排序</option>
                     <option value="NAME">名稱排序</option>
-                    <option value="DIST">距離我的位置 (近到遠)</option>
+                    <option value="DIST">距離 (近到遠)</option>
                 </select>
-                <button onclick="locateUser()">定位我的位置</button>
+            </div>
+            <div class="filter-group">
+                <button class="btn" onclick="locateUser()">📍 我的位置</button>
+                <!-- 手機版開關清單按鈕 (Default 收起) -->
+                <button id="toggleListBtn" class="btn btn-toggle" onclick="toggleShopList()">📋 顯示清單</button>
             </div>
         </div>
 
-        <!-- 店家清單列表 -->
+        <!-- 店家清單列表 (預設隱藏) -->
         <div class="list-container" id="shopList"></div>
     </div>
 
-    <!-- 地圖面板 -->
+    <!-- 地圖面板 (預設滿版) -->
     <div id="map"></div>
 
 <script>
-    // CSV 讀取路徑（已更新為最新含有精確 Google Maps 連結的檔名）
     const CSV_URL = './busan_locations_direct_gmap.csv';
 
     let map;
@@ -96,8 +107,13 @@
     let allData = [];
     let userCoords = null;
 
-    // 初始化地圖與底圖切換選項
+    // 初始化地圖：Default 改為 OpenStreetMap (OSM)
     function initMap() {
+        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        });
+
         const esriStreet = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
             attribution: 'Tiles © Esri'
         });
@@ -110,26 +126,41 @@
             attribution: '© CARTO'
         });
 
-        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '© OpenStreetMap'
-        });
-
+        // 預設載入 OSM
         map = L.map('map', {
             center: [35.1795, 129.0756],
             zoom: 11,
-            layers: [esriStreet]
+            layers: [osm]
         });
 
         const baseMaps = {
+            "OpenStreetMap (預設)": osm,
             "Esri 街道圖": esriStreet,
             "Esri 衛星圖": esriImagery,
-            "Carto 白底圖": cartoPositron,
-            "OpenStreetMap": osm
+            "Carto 白底圖": cartoPositron
         };
 
         L.control.layers(baseMaps).addTo(map);
         markersLayer.addTo(map);
+    }
+
+    // 切換手機版清單展開/折疊
+    function toggleShopList() {
+        const listContainer = document.getElementById('shopList');
+        const toggleBtn = document.getElementById('toggleListBtn');
+        
+        listContainer.classList.toggle('open');
+        
+        if (listContainer.classList.contains('open')) {
+            toggleBtn.textContent = '✕ 折疊清單';
+            toggleBtn.classList.add('active');
+        } else {
+            toggleBtn.textContent = '📋 顯示清單';
+            toggleBtn.classList.remove('active');
+        }
+
+        // 重新調整地圖尺寸避免變形
+        setTimeout(() => map.invalidateSize(), 200);
     }
 
     // 解析 CSV
@@ -145,12 +176,12 @@
             },
             error: function(err) {
                 console.error("CSV 讀取失敗:", err);
-                alert("無法載入 CSV 資料，請確認檔案路徑是否正確。");
+                alert("無法載入 CSV 資料，請確認檔案路徑。");
             }
         });
     }
 
-    // 自動建置分類與區域下拉選單
+    // 填充選單
     function populateFilters() {
         const categories = new Set();
         const districts = new Set();
@@ -171,7 +202,7 @@
         });
     }
 
-    // 計算兩點間距離 (km)
+    // 計算距離
     function getDistance(lat1, lon1, lat2, lon2) {
         const R = 6371;
         const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -183,7 +214,7 @@
         return R * c;
     }
 
-    // 篩選與排序邏輯
+    // 篩選與渲染
     function filterAndRender() {
         const searchText = document.getElementById('searchInput').value.toLowerCase();
         const selectedCat = document.getElementById('categoryFilter').value;
@@ -212,7 +243,7 @@
         renderMapAndList(filtered);
     }
 
-    // 繪製地圖 Marker 與卡片列表
+    // 繪製地圖與卡片
     function renderMapAndList(data) {
         markersLayer.clearLayers();
         const listContainer = document.getElementById('shopList');
@@ -227,20 +258,16 @@
 
             bounds.push([lat, lng]);
 
-            // 讀取 CSV 中已升級的直達 Google Maps 連結 (若無則備用以座標開地圖)
             const gmapUrl = item['Google Maps Link'] || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-
-            // 處理 IG 推薦連結
             const links = (item['recommended by'] || '').split('\n').filter(l => l.trim() !== '');
             let igLinksHTML = links.map(link => `<a href="${link.trim()}" class="ig-link" target="_blank" rel="noopener">📍 IG 推薦貼文</a>`).join('<br>');
 
-            // 1. 地圖 Popup
             const popupContent = `
                 <div class="popup-title">${item['Shop name']}</div>
                 <div class="popup-category">${item.category || ''} | ${item.district || ''}</div>
                 <div class="popup-remarks">${item.remarks || ''}</div>
                 <div class="popup-actions">
-                    <a href="${gmapUrl}" class="gmap-link" target="_blank" rel="noopener">🗺️ 開啟 Google Maps (第一結果)</a>
+                    <a href="${gmapUrl}" class="gmap-link" target="_blank" rel="noopener">🗺️ 開啟 Google Maps</a>
                     ${igLinksHTML}
                 </div>
             `;
@@ -248,10 +275,8 @@
             const marker = L.marker([lat, lng]).bindPopup(popupContent);
             markersLayer.addLayer(marker);
 
-            // 2. 側邊列表卡片
             const card = document.createElement('div');
             card.className = 'card';
-            
             let distDisplay = item._dist ? `<span style="color:#28a745; font-weight:bold;"> (${item._dist.toFixed(1)} km)</span>` : '';
 
             card.innerHTML = `
@@ -267,7 +292,6 @@
                 </div>
             `;
 
-            // 點擊卡片跳轉至地圖相應位置並開啟 Popup
             card.onclick = (e) => {
                 if (e.target.tagName !== 'A') {
                     map.setView([lat, lng], 16);
@@ -278,13 +302,12 @@
             listContainer.appendChild(card);
         });
 
-        // 自動將視野移動並設為適合顯示所有地點的 Default Zoom/Bounds
         if (bounds.length > 0) {
             map.fitBounds(bounds, { padding: [30, 30] });
         }
     }
 
-    // 定位我的位置
+    // 使用者定位
     function locateUser() {
         if (!navigator.geolocation) {
             alert('您的瀏覽器不支援定位功能');
