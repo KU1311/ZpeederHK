@@ -1,410 +1,216 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>日語單字卡 / 短句庫</title>
-  <style>
-    :root {
-      --bg-color: #f4f6f9;
-      --card-bg: #ffffff;
-      --text-main: #2c3e50;
-      --text-sub: #7f8c8d;
-      --accent: #3498db;
-      --accent-hover: #2980b9;
-      --border-color: #e2e8f0;
-      --shadow: 0 4px 12px rgba(0,0,0,0.06);
-    }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  padding: 24px 16px;
+  max-width: 900px;
+  margin: 0 auto;
+}
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      background-color: var(--bg-color);
-      color: var(--text-main);
-      padding: 24px 16px;
-      max-width: 900px;
-      margin: 0 auto;
-    }
+header {
+  text-align: center;
+  margin-bottom: 24px;
+}
 
-    header {
-      text-align: center;
-      margin-bottom: 24px;
-    }
+h1 {
+  font-size: 1.8rem;
+  margin-bottom: 12px;
+  color: var(--text-main);
+}
 
-    h1 {
-      font-size: 1.8rem;
-      margin-bottom: 12px;
-      color: var(--text-main);
-    }
+/* 模式切換按鈕 */
+.mode-switch {
+  display: inline-flex;
+  background-color: #e2e8f0;
+  padding: 4px;
+  border-radius: 30px;
+  gap: 4px;
+}
 
-    /* 模式切換按鈕 */
-    .mode-switch {
-      display: inline-flex;
-      background-color: #e2e8f0;
-      padding: 4px;
-      border-radius: 30px;
-      gap: 4px;
-    }
+.mode-btn {
+  border: none;
+  background: transparent;
+  padding: 8px 18px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 20px;
+  cursor: pointer;
+  color: var(--text-sub);
+  transition: all 0.2s ease;
+}
 
-    .mode-btn {
-      border: none;
-      background: transparent;
-      padding: 8px 18px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      border-radius: 20px;
-      cursor: pointer;
-      color: var(--text-sub);
-      transition: all 0.2s ease;
-    }
+.mode-btn.active {
+  background-color: var(--card-bg);
+  color: var(--accent);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
 
-    .mode-btn.active {
-      background-color: var(--card-bg);
-      color: var(--accent);
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    }
+.view-section {
+  display: none;
+}
 
-    .view-section {
-      display: none;
-    }
+.view-section.active {
+  display: block;
+}
 
-    .view-section.active {
-      display: block;
-    }
+/* 模式 1：隨機單字卡樣式 */
+.flashcard-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 20px;
+}
 
-    /* 模式 1：隨機單字卡樣式 */
-    .flashcard-wrapper {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin-top: 20px;
-    }
+.flashcard {
+  background: var(--card-bg);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  width: 100%;
+  max-width: 480px;
+  padding: 36px 24px;
+  text-align: center;
+  border: 1px solid var(--border-color);
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
 
-    .flashcard {
-      background: var(--card-bg);
-      border-radius: 16px;
-      box-shadow: var(--shadow);
-      width: 100%;
-      max-width: 480px;
-      padding: 36px 24px;
-      text-align: center;
-      border: 1px solid var(--border-color);
-      min-height: 240px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-    }
+.jp-text {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #1a202c;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
 
-    .jp-text {
-      font-size: 2rem;
-      font-weight: bold;
-      color: #1a202c;
-      margin-bottom: 12px;
-      line-height: 1.4;
-    }
+.roma-text {
+  font-size: 1.1rem;
+  color: var(--accent);
+  font-style: italic;
+  margin-bottom: 16px;
+}
 
-    .roma-text {
-      font-size: 1.1rem;
-      color: var(--accent);
-      font-style: italic;
-      margin-bottom: 16px;
-    }
+.zh-text {
+  font-size: 1.2rem;
+  color: #4a5568;
+  border-top: 1px dashed var(--border-color);
+  padding-top: 16px;
+  width: 100%;
+}
 
-    .zh-text {
-      font-size: 1.2rem;
-      color: #4a5568;
-      border-top: 1px dashed var(--border-color);
-      padding-top: 16px;
-      width: 100%;
-    }
+.note-text {
+  font-size: 0.85rem;
+  color: #95a5a6;
+  margin-top: 10px;
+}
 
-    .card-actions {
-      margin-top: 24px;
-      display: flex;
-      gap: 12px;
-    }
+.card-actions {
+  margin-top: 24px;
+  display: flex;
+  gap: 12px;
+}
 
-    .action-btn {
-      background-color: var(--accent);
-      color: white;
-      border: none;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background-color 0.2s;
-    }
+.action-btn {
+  background-color: var(--accent);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
 
-    .action-btn:hover { background-color: var(--accent-hover); }
+.action-btn:hover { background-color: var(--accent-hover); }
 
-    .action-btn.secondary {
-      background-color: #2ecc71;
-    }
-    .action-btn.secondary:hover { background-color: #27ae60; }
+.action-btn.secondary {
+  background-color: #2ecc71;
+}
+.action-btn.secondary:hover { background-color: #27ae60; }
 
-    /* 模式 2：列表樣式與搜尋 */
-    .search-box {
-      width: 100%;
-      padding: 12px 16px;
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
-      font-size: 1rem;
-      margin-bottom: 20px;
-      outline: none;
-      background: var(--card-bg);
-    }
+/* 模式 2：列表樣式與搜尋 */
+.search-box {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  font-size: 1rem;
+  margin-bottom: 20px;
+  outline: none;
+  background: var(--card-bg);
+}
 
-    .search-box:focus { border-color: var(--accent); }
+.search-box:focus { border-color: var(--accent); }
 
-    .list-container {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 16px;
-    }
+.list-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
 
-    .list-item {
-      background: var(--card-bg);
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: var(--shadow);
-      border: 1px solid var(--border-color);
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
+.list-item {
+  background: var(--card-bg);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
 
-    .list-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 8px;
-    }
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
 
-    .list-jp {
-      font-size: 1.25rem;
-      font-weight: bold;
-      color: #1a202c;
-      padding-right: 8px;
-    }
+.list-jp {
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: #1a202c;
+  padding-right: 8px;
+}
 
-    .speaker-icon {
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-size: 1.2rem;
-      color: var(--accent);
-      padding: 4px;
-      border-radius: 50%;
-    }
+.speaker-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  color: var(--accent);
+  padding: 4px;
+  border-radius: 50%;
+}
 
-    .speaker-icon:hover { background-color: #ebf8ff; }
+.speaker-icon:hover { background-color: #ebf8ff; }
 
-    .list-roma {
-      font-size: 0.9rem;
-      color: var(--accent);
-      font-style: italic;
-      margin-bottom: 8px;
-    }
+.list-roma {
+  font-size: 0.9rem;
+  color: var(--accent);
+  font-style: italic;
+  margin-bottom: 8px;
+}
 
-    .list-zh {
-      font-size: 0.98rem;
-      color: #4a5568;
-    }
+.list-zh {
+  font-size: 0.98rem;
+  color: #4a5568;
+}
 
-    .loading, .error {
-      text-align: center;
-      padding: 40px;
-      font-size: 1.1rem;
-      color: var(--text-sub);
-    }
-  </style>
-</head>
-<body>
+.list-note {
+  font-size: 0.8rem;
+  color: #95a5a6;
+  margin-top: 6px;
+}
 
-  <header>
-    <h1>🇯🇵 日語學習單字庫</h1>
-    <div class="mode-switch">
-      <button class="mode-btn active" onclick="switchMode('random')">🎲 隨機卡片</button>
-      <button class="mode-btn" onclick="switchMode('list')">📋 全部列表</button>
-    </div>
-  </header>
-
-  <!-- 模式 1：隨機顯示 -->
-  <section id="random-view" class="view-section active">
-    <div class="flashcard-wrapper">
-      <div class="flashcard" id="card-content">
-        <div class="loading">載入中...</div>
-      </div>
-      <div class="card-actions">
-        <button class="action-btn secondary" onclick="speakCurrent()">🔊 發音</button>
-        <button class="action-btn" onclick="showRandomCard()">🎲 下一張</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- 模式 2：全部列出 -->
-  <section id="list-view" class="view-section">
-    <input type="text" id="search-input" class="search-box" placeholder="搜尋日文、羅馬拼音或中文..." oninput="filterList()">
-    <div class="list-container" id="list-content">
-      <div class="loading">載入中...</div>
-    </div>
-  </section>
-
-  <script>
-    // ⚠️ 請將下方的 URL 替換成你剛剛發佈的 Google Sheet CSV 連結
-    const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQrNbrgg5xEkn-gVgMAUOM0Lw8eYgJ4oCZBJ7ApUPjk1Ar0ZCTMo2OF_lgnUPSwKsPF2zb8EWbPzmB1/pub?output=csv';
-
-    let vocabList = [];
-    let currentCard = null;
-
-    // 日語發音功能 (Web Speech API)
-    function speak(text) {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'ja-JP';
-        utterance.rate = 0.85; // 語速稍慢，方便聽清
-        window.speechSynthesis.speak(utterance);
-      } else {
-        alert('您的瀏覽器不支援發音功能。');
-      }
-    }
-
-    function speakCurrent() {
-      if (currentCard && currentCard.jp) {
-        speak(currentCard.jp);
-      }
-    }
-
-    // 解析 CSV 資料
-    function parseCSV(text) {
-      const lines = text.split(/\r\n|\n/);
-      const items = [];
-      
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        
-        const row = line.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/).map(col => col.replace(/^"|"$/g, '').trim());
-        
-        const jp = row[1] || '';
-        const zh = row[2] || '';
-        const roma = row[3] || '';
-
-        if (jp) items.push({ jp, zh, roma });
-      }
-      return items;
-    }
-
-    // 載入資料
-    async function loadData() {
-      try {
-        const response = await fetch(CSV_URL);
-        if (!response.ok) throw new Error('無法讀取 CSV 資料');
-        const csvText = await response.text();
-        vocabList = parseCSV(csvText);
-
-        if (vocabList.length === 0) {
-          showError('目前試算表中沒有任何單字資料');
-          return;
-        }
-
-        showRandomCard();
-        renderList(vocabList);
-      } catch (err) {
-        console.error(err);
-        // 若尚未設定 CSV 網址，顯示提示與測試資料
-        vocabList = [
-          { jp: "お腹が空いた", roma: "onaka ga suita", zh: "肚子餓了" },
-          { jp: "なるほど", roma: "naruhodo", zh: "原來如此" },
-          { jp: "何か食べに行こう", roma: "nanika tabe ni ikou", zh: "我們去吃點東西吧" }
-        ];
-        showRandomCard();
-        renderList(vocabList);
-      }
-    }
-
-    function showError(msg) {
-      document.getElementById('card-content').innerHTML = `<div class="error">${msg}</div>`;
-      document.getElementById('list-content').innerHTML = `<div class="error">${msg}</div>`;
-    }
-
-    // 模式 1：顯示隨機卡片
-    function showRandomCard() {
-      if (vocabList.length === 0) return;
-      const randomIndex = Math.floor(Math.random() * vocabList.length);
-      currentCard = vocabList[randomIndex];
-
-      const container = document.getElementById('card-content');
-      container.innerHTML = `
-        <div class="jp-text">${escapeHtml(currentCard.jp)}</div>
-        <div class="roma-text">${escapeHtml(currentCard.roma)}</div>
-        <div class="zh-text">${escapeHtml(currentCard.zh)}</div>
-      `;
-    }
-
-    // 模式 2：渲染列表
-    function renderList(data) {
-      const container = document.getElementById('list-content');
-      if (data.length === 0) {
-        container.innerHTML = '<div class="error">找不到符合條件的單字</div>';
-        return;
-      }
-
-      container.innerHTML = data.map(item => `
-        <div class="list-item">
-          <div>
-            <div class="list-header">
-              <span class="list-jp">${escapeHtml(item.jp)}</span>
-              <button class="speaker-icon" onclick="speak('${escapeJsString(item.jp)}')">🔊</button>
-            </div>
-            <div class="list-roma">${escapeHtml(item.roma)}</div>
-          </div>
-          <div class="list-zh">${escapeHtml(item.zh)}</div>
-        </div>
-      `).join('');
-    }
-
-    // 搜尋過濾
-    function filterList() {
-      const query = document.getElementById('search-input').value.toLowerCase();
-      const filtered = vocabList.filter(item => 
-        item.jp.toLowerCase().includes(query) ||
-        item.roma.toLowerCase().includes(query) ||
-        item.zh.toLowerCase().includes(query)
-      );
-      renderList(filtered);
-    }
-
-    // 切換模式
-    function switchMode(mode) {
-      const btns = document.querySelectorAll('.mode-btn');
-      const sections = document.querySelectorAll('.view-section');
-      
-      btns.forEach(btn => btn.classList.remove('active'));
-      sections.forEach(sec => sec.classList.remove('active'));
-
-      if (mode === 'random') {
-        btns[0].classList.add('active');
-        document.getElementById('random-view').classList.add('active');
-      } else {
-        btns[1].classList.add('active');
-        document.getElementById('list-view').classList.add('active');
-      }
-    }
-
-    function escapeHtml(str) {
-      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }
-
-    function escapeJsString(str) {
-      return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
-    }
-
-    loadData();
-  </script>
-</body>
-</html>
+.loading, .error {
+  text-align: center;
+  padding: 40px;
+  font-size: 1.1rem;
+  color: var(--text-sub);
+}
