@@ -260,8 +260,8 @@
   </section>
 
   <script>
-    // ⚠️ 請將下方的 URL 替換成你發佈的 Google Sheet CSV 連結
-    const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQrNbrgg5xEkn-gVgMAUOM0Lw8eYgJ4oCZBJ7ApUPjk1Ar0ZCTMo2OF_lgnUPSwKsPF2zb8EWbPzmB1/pubhtml';
+    // ✅ 已修復：將網址結尾改為 pub?output=csv 以正確獲取 CSV 文本資料
+    const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQrNbrgg5xEkn-gVgMAUOM0Lw8eYgJ4oCZBJ7ApUPjk1Ar0ZCTMo2OF_lgnUPSwKsPF2zb8EWbPzmB1/pub?output=csv';
 
     let vocabList = [];
     let currentCard = null;
@@ -285,7 +285,7 @@
       }
     }
 
-    // 解析 CSV 資料（精準對應你現有的 5 欄結構）
+    // 解析 CSV 資料（對應 5 欄結構）
     // A欄(0): 時間戳記 | B欄(1): 日文 | C欄(2): 羅馬拼音 | D欄(3): 中文意思 | E欄(4): 備註
     function parseCSV(text) {
       const lines = text.split(/\r\n|\n/);
@@ -295,6 +295,7 @@
         const line = lines[i].trim();
         if (!line) continue;
         
+        // 解析雙引號與逗號分隔
         const row = line.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/).map(col => col.replace(/^"|"$/g, '').trim());
         
         const jp = row[1] || '';
@@ -324,7 +325,7 @@
         renderList(vocabList);
       } catch (err) {
         console.error(err);
-        // 尚未填寫 CSV 網址時的測試範例
+        // 讀取失敗時的測試備用資料
         vocabList = [
           { jp: "予約なしです", roma: "yoyaku nashi desu", zh: "無需預約。", note: "餐廳情境" },
           { jp: "なるほど", roma: "naruhodo", zh: "原來如此", note: "口語" }
