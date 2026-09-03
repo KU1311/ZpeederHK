@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的日語學習單字庫</title>
+  <style>
+    body { font-family: sans-serif; background: #f5f5f7; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+    .card-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; width: 100%; max-width: 800px; }
+    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    .jp { font-size: 1.4rem; font-weight: bold; color: #2c3e50; margin-bottom: 4px; }
+    .roma { font-size: 0.9rem; color: #7f8c8d; font-style: italic; margin-bottom: 8px; }
+    .zh { font-size: 1rem; color: #34495e; }
+  </style>
+</head>
+<body>
+  <h1>🇯🇵 日語學習單字庫</h1>
+  <div class="card-container" id="app"></div>
+
+  <script>
+    // 範例資料（未來可改成抓取 Google Sheet）
+    const vocabList = [
+      { jp: "お腹が空いた", roma: "onaka ga suita", zh: "肚子餓了" },
+      { jp: "なるほど", roma: "naruhodo", zh: "原來如此" }
+    ];
+
+    const app = document.getElementById('app');
+    vocabList.forEach(item => {
+      app.innerHTML += `
+        <div class="card">
+          <div class="jp">${item.jp}</div>
+          <div class="roma">${item.roma}</div>
+          <div class="zh">${item.zh}</div>
+        </div>
+      `;
+    });
+  </script>
+</body>
+</html>
