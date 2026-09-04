@@ -54,6 +54,23 @@
     .btn-outline:hover { background-color: #f1f5f9; }
     .btn-active { background-color: #334155; color: white; border-color: #334155; }
 
+    /* 語音播放按鈕 */
+    .btn-speech {
+      background: #f1f5f9;
+      border: none;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn-speech:hover { background: #e2e8f0; transform: scale(1.05); }
+    .btn-speech:active { transform: scale(0.95); }
+
     /* 標籤類別 Badge */
     .badge {
       display: inline-block;
@@ -81,7 +98,6 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      position: relative;
     }
 
     .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
@@ -89,7 +105,6 @@
     .card-romaji { font-size: 0.95rem; color: var(--primary-color); font-style: italic; margin-bottom: 12px; }
     .card-zh { font-size: 1.1rem; color: #334155; margin-bottom: 8px; font-weight: 500; }
     .card-note { font-size: 0.85rem; color: var(--text-sub); background: #f1f5f9; padding: 6px 10px; border-radius: 6px; margin-top: 8px; }
-    .card-time { font-size: 0.75rem; color: #94a3b8; text-align: right; margin-top: 10px; }
 
     /* 模式 2: 隨機單張大卡片 View */
     .random-view {
@@ -115,6 +130,7 @@
     .single-card .card-romaji { font-size: 1.2rem; margin-bottom: 20px; }
     .single-card .card-zh { font-size: 1.6rem; color: #0f172a; margin-bottom: 15px; }
     .single-card .card-note { display: inline-block; text-align: left; max-width: 100%; }
+    .single-card .btn-speech { width: 48px; height: 48px; font-size: 1.4rem; margin: 0 auto 15px auto; }
 
     .action-group { margin-top: 20px; }
 
@@ -169,6 +185,20 @@
       fetchCSVData();
     };
 
+    // 發音朗讀功能 (Web Speech API)
+    function speakJapanese(text) {
+      if (!('speechSynthesis' in window)) {
+        alert("您的瀏覽器不支援語音播放功能。");
+        return;
+      }
+      
+      window.speechSynthesis.cancel(); // 停止先前的朗讀
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ja-JP';
+      utterance.rate = 0.9; // 語速稍微放慢一點，方便聽清楚
+      window.speechSynthesis.speak(utterance);
+    }
+
     // 從 Google Sheet 發布的 CSV 讀取資料
     function fetchCSVData() {
       fetch(csvUrl)
@@ -186,7 +216,7 @@
         });
     }
 
-    // 解析 CSV 格式 (欄位順序: 時間, 日文, 羅馬拼音, 中文, 備註, 類別)
+    // 解析 CSV 格式 (無視 timestamp 顯示)
     function parseCSV(text) {
       const lines = text.split(/\r\n|\n/);
       allData = [];
@@ -200,7 +230,6 @@
 
         if (cleanCols.length >= 2) {
           allData.push({
-            timestamp: cleanCols[0] || '',
             japanese:  cleanCols[1] || '',
             romaji:    cleanCols[2] || '',
             chinese:   cleanCols[3] || '',
@@ -249,6 +278,11 @@
       }
     }
 
+    // 安全字串轉義，避免日文或單字內包含單引號導致語音語法錯誤
+    function escapeText(text) {
+      return text.replace(/'/g, "\\'");
+    }
+
     // 渲染「全部卡片」列表
     function renderAllCards(data) {
       const grid = document.getElementById("allCardsGrid");
@@ -266,13 +300,13 @@
           <div>
             <div class="card-header">
               <span class="badge">${item.category}</span>
+              <button class="btn-speech" title="朗讀日文" onclick="speakJapanese('${escapeText(item.japanese)}')">🔊</button>
             </div>
             <div class="card-jp">${item.japanese}</div>
             <div class="card-romaji">${item.romaji}</div>
             <div class="card-zh">${item.chinese}</div>
             ${item.note ? `<div class="card-note">💡 ${item.note}</div>` : ''}
           </div>
-          ${item.timestamp ? `<div class="card-time">${item.timestamp}</div>` : ''}
         `;
         grid.appendChild(card);
       });
@@ -294,6 +328,7 @@
         <div class="card-header" style="justify-content: center; margin-bottom: 15px;">
           <span class="badge">${item.category}</span>
         </div>
+        <button class="btn-speech" title="朗讀日文" onclick="speakJapanese('${escapeText(item.japanese)}')">🔊</button>
         <div class="card-jp">${item.japanese}</div>
         <div class="card-romaji">${item.romaji}</div>
         <div class="card-zh">${item.chinese}</div>
@@ -319,6 +354,7 @@
         allGrid.style.display = 'none';
         randomView.style.display = 'flex';
         btnAll.classList.remove('btn-active');
+        btnRandom.classList.active;
         btnRandom.classList.add('btn-active');
         drawRandomCard();
       }
