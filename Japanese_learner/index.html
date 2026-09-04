@@ -102,7 +102,7 @@
 
     .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .card-jp { font-size: 1.5rem; font-weight: bold; color: var(--text-main); margin-bottom: 4px; }
-    .card-romaji { font-size: 0.95rem; color: var(--primary-color); font-style: italic; margin-bottom: 12px; }
+    .card-romaji { font-size: 0.95rem; color: var(--primary-color); font-style: italic; margin-bottom: 12px; word-break: break-word; }
     .card-zh { font-size: 1.1rem; color: #334155; margin-bottom: 8px; font-weight: 500; }
     .card-note { font-size: 0.85rem; color: var(--text-sub); background: #f1f5f9; padding: 6px 10px; border-radius: 6px; margin-top: 8px; }
 
@@ -127,7 +127,7 @@
     }
 
     .single-card .card-jp { font-size: 2.5rem; margin-bottom: 8px; }
-    .single-card .card-romaji { font-size: 1.2rem; margin-bottom: 20px; }
+    .single-card .card-romaji { font-size: 1.2rem; margin-bottom: 20px; word-break: break-word; }
     .single-card .card-zh { font-size: 1.6rem; color: #0f172a; margin-bottom: 15px; }
     .single-card .card-note { display: inline-block; text-align: left; max-width: 100%; }
     .single-card .btn-speech { width: 48px; height: 48px; font-size: 1.4rem; margin: 0 auto 15px auto; }
@@ -179,7 +179,7 @@
 
     let allData = [];
     let currentFilteredData = [];
-    let currentMode = 'all'; // 'all' 或 'random'
+    let currentMode = 'all';
 
     window.onload = function() {
       fetchCSVData();
@@ -192,10 +192,10 @@
         return;
       }
       
-      window.speechSynthesis.cancel(); // 停止先前的朗讀
+      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ja-JP';
-      utterance.rate = 0.9; // 語速稍微放慢一點，方便聽清楚
+      utterance.rate = 0.9;
       window.speechSynthesis.speak(utterance);
     }
 
@@ -216,7 +216,28 @@
         });
     }
 
-    // 解析 CSV 格式 (無視 timestamp 顯示)
+    // 依據 CSV 規格精確解析單行（正確處置帶有逗號或雙引號包裹的字串）
+    function parseCSVLine(line) {
+      const result = [];
+      let current = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result.map(col => col.replace(/^"|"$/g, '').replace(/""/g, '"'));
+    }
+
+    // 解析 CSV 內容
     function parseCSV(text) {
       const lines = text.split(/\r\n|\n/);
       allData = [];
@@ -224,14 +245,12 @@
       for (let i = 1; i < lines.length; i++) { // 跳過表頭
         if (!lines[i].trim()) continue;
 
-        // 安全處理 CSV 欄位分隔 (防止逗號衝突)
-        const cols = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || lines[i].split(',');
-        const cleanCols = cols.map(c => c ? c.replace(/^"|"$/g, '').trim() : '');
+        const cleanCols = parseCSVLine(lines[i]);
 
         if (cleanCols.length >= 2) {
           allData.push({
             japanese:  cleanCols[1] || '',
-            romaji:    cleanCols[2] || '',
+            romaji:    cleanCols[2] || '', // 精確保留整段羅馬拼音 (包含空格)
             chinese:   cleanCols[3] || '',
             note:      cleanCols[4] || '',
             category:  cleanCols[5] || '未分類'
@@ -278,7 +297,7 @@
       }
     }
 
-    // 安全字串轉義，避免日文或單字內包含單引號導致語音語法錯誤
+    // 安全字串轉義
     function escapeText(text) {
       return text.replace(/'/g, "\\'");
     }
@@ -336,7 +355,7 @@
       `;
     }
 
-    // 切換「全部列出」與「隨機抽卡」模式
+    // 切換模式
     function switchView(mode) {
       currentMode = mode;
       const allGrid = document.getElementById("allCardsGrid");
@@ -354,7 +373,6 @@
         allGrid.style.display = 'none';
         randomView.style.display = 'flex';
         btnAll.classList.remove('btn-active');
-        btnRandom.classList.active;
         btnRandom.classList.add('btn-active');
         drawRandomCard();
       }
