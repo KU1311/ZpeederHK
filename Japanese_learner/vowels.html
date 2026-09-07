@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>日文五十音抽卡遊戲</title>
+  <style>
+    body {
+      font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+      background-color: #f0f4f8;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+
+    .game-container {
+      background: #ffffff;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      text-align: center;
+      width: 320px;
+    }
+
+    .controls {
+      margin-bottom: 20px;
+    }
+
+    select {
+      padding: 8px 12px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      outline: none;
+    }
+
+    .card {
+      width: 200px;
+      height: 260px;
+      margin: 0 auto 20px auto;
+      background: #ffffff;
+      border: 3px solid #4a90e2;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+    }
+
+    .kana {
+      font-size: 80px;
+      font-weight: bold;
+      color: #333333;
+    }
+
+    .romaji {
+      font-size: 28px;
+      color: #e74c3c;
+      font-weight: bold;
+      margin-top: 15px;
+      min-height: 35px;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .btn-show {
+      background-color: #e74c3c;
+      color: white;
+    }
+
+    .btn-show:hover {
+      background-color: #c0392b;
+    }
+
+    .btn-next {
+      background-color: #4a90e2;
+      color: white;
+    }
+
+    .btn-next:hover {
+      background-color: #357abd;
+    }
+  </style>
+</head>
+<body>
+
+<div class="game-container">
+  <div class="controls">
+    <select id="modeSelect" onchange="nextCard()">
+      <option value="hiragana">平假名 (Hiragana)</option>
+      <option value="katakana">片假名 (Katakana)</option>
+      <option value="both">混合 (Both)</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <div class="kana" id="kanaDisplay">-</div>
+    <div class="romaji" id="romajiDisplay"></div>
+  </div>
+
+  <div class="btn-group">
+    <button class="btn-show" onclick="showAnswer()">顯示答案</button>
+    <button class="btn-next" onclick="nextCard()">下一張</button>
+  </div>
+</div>
+
+<script>
+  const kanaData = [
+    { h: 'あ', k: 'ア', r: 'a' },   { h: 'い', k: 'イ', r: 'i' },   { h: 'う', k: 'ウ', r: 'u' },   { h: 'え', k: 'エ', r: 'e' },   { h: 'お', k: 'オ', r: 'o' },
+    { h: 'か', k: 'カ', r: 'ka' },  { h: 'き', k: 'キ', r: 'ki' },  { h: 'く', k: 'ク', r: 'ku' },  { h: 'け', k: 'ケ', r: 'ke' },  { h: 'こ', k: 'コ', r: 'ko' },
+    { h: 'さ', k: 'サ', r: 'sa' },  { h: 'し', k: 'シ', r: 'shi' }, { h: 'す', k: 'ス', r: 'su' },  { h: 'せ', k: 'セ', r: 'se' },  { h: 'そ', k: 'ソ', r: 'so' },
+    { h: 'た', k: 'タ', r: 'ta' },  { h: 'ち', k: 'チ', r: 'chi' }, { h: 'つ', k: 'ツ', r: 'tsu' }, { h: 'て', k: 'テ', r: 'te' },  { h: 'と', k: 'ト', r: 'to' },
+    { h: 'な', k: 'ナ', r: 'na' },  { h: 'に', k: 'ニ', r: 'ni' },  { h: 'ぬ', k: 'ヌ', r: 'nu' },  { h: 'ね', k: 'ネ', r: 'ne' },  { h: 'の', k: 'ノ', r: 'no' },
+    { h: 'は', k: 'ハ', r: 'ha' },  { h: 'ひ', k: 'ヒ', r: 'hi' },  { h: 'ふ', k: 'フ', r: 'fu' },  { h: 'へ', k: 'ヘ', r: 'he' },  { h: 'ほ', k: 'ホ', r: 'ho' },
+    { h: 'ま', k: 'マ', r: 'ma' },  { h: 'み', k: 'ミ', r: 'mi' },  { h: 'む', k: 'ム', r: 'mu' },  { h: 'め', k: 'メ', r: 'me' },  { h: 'も', k: 'モ', r: 'mo' },
+    { h: 'や', k: 'ヤ', r: 'ya' },  { h: 'ゆ', k: 'ユ', r: 'yu' },  { h: 'よ', k: 'ヨ', r: 'yo' },
+    { h: 'ら', k: 'ラ', r: 'ra' },  { h: 'り', k: 'リ', r: 'ri' },  { h: 'る', k: 'ル', r: 'ru' },  { h: 'れ', k: 'レ', r: 're' },  { h: 'ろ', k: 'ロ', r: 'ro' },
+    { h: 'わ', k: 'ワ', r: 'wa' },  { h: 'を', k: 'ヲ', r: 'wo' },  { h: 'ん', k: 'ン', r: 'n' }
+  ];
+
+  let currentRomaji = '';
+
+  function nextCard() {
+    const mode = document.getElementById('modeSelect').value;
+    const randomIndex = Math.floor(Math.random() * kanaData.length);
+    const item = kanaData[randomIndex];
+
+    let charToShow = '';
+    if (mode === 'hiragana') {
+      charToShow = item.h;
+    } else if (mode === 'katakana') {
+      charToShow = item.k;
+    } else {
+      charToShow = Math.random() < 0.5 ? item.h : item.k;
+    }
+
+    document.getElementById('kanaDisplay').textContent = charToShow;
+    document.getElementById('romajiDisplay').textContent = '';
+    currentRomaji = item.r;
+  }
+
+  function showAnswer() {
+    document.getElementById('romajiDisplay').textContent = currentRomaji;
+  }
+
+  // 初始化第一張卡片
+  nextCard();
+</script>
+
+</body>
+</html>
