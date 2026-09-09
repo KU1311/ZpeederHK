@@ -99,7 +99,8 @@
     <div id="map"></div>
 
 <script>
-    const CSV_URL = './busan_locations_direct_gmap.csv';
+    // 直接調用 Google Sheets 發佈之即時 CSV 連結
+    const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQUD2hl2ESuxvAOGP9vEJNtSCO_sfAxvEFfbnPOYJnsDc4OylmzXlf3YGgRaHeFORjcpcSToFDhrhU5/pub?gid=1776966969&single=true&output=csv';
 
     let map;
     let markersLayer = L.layerGroup();
@@ -161,7 +162,7 @@
         setTimeout(() => map.invalidateSize(), 200);
     }
 
-    // 解析 CSV
+    // 解析 Google Sheets 發佈的線上 CSV
     function loadCSV() {
         Papa.parse(CSV_URL, {
             download: true,
@@ -173,8 +174,8 @@
                 filterAndRender();
             },
             error: function(err) {
-                console.error("CSV 讀取失敗:", err);
-                alert("無法載入 CSV 資料，請確認檔案路徑。");
+                console.error("線上 CSV 讀取失敗:", err);
+                alert("無法從 Google Sheets 載入資料，請確認網路連線與網址權限。");
             }
         });
     }
@@ -192,14 +193,14 @@
             distCounts[dist] = (distCounts[dist] || 0) + 1;
         });
 
-        // 1. 填寫分類下拉選單 (含 Count)
+        // 1. 分類下拉選單 (含 Count)
         const catSelect = document.getElementById('categoryFilter');
         catSelect.innerHTML = `<option value="ALL">全部分類 (${allData.length})</option>`;
         Object.keys(catCounts).forEach(cat => {
             catSelect.innerHTML += `<option value="${cat}">${cat} (${catCounts[cat]})</option>`;
         });
 
-        // 2. 填寫區域下拉選單 (含 Count)
+        // 2. 區域下拉選單 (含 Count)
         const distSelect = document.getElementById('districtFilter');
         distSelect.innerHTML = `<option value="ALL">全部區域 (${allData.length})</option>`;
         Object.keys(distCounts).forEach(dist => {
@@ -230,8 +231,8 @@
             const matchesSearch = (item['Shop name'] || '').toLowerCase().includes(searchText) ||
                                   (item['remarks'] || '').toLowerCase().includes(searchText) ||
                                   (item['district'] || '').toLowerCase().includes(searchText);
-            const matchesCat = selectedCat === 'ALL' || item.category === selectedCat;
-            const matchesDist = selectedDist === 'ALL' || item.district === selectedDist;
+            const matchesCat = selectedCat === 'ALL' || (item.category || '').trim() === selectedCat;
+            const matchesDist = selectedDist === 'ALL' || (item.district || '').trim() === selectedDist;
 
             return matchesSearch && matchesCat && matchesDist;
         });
