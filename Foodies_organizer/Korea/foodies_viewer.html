@@ -126,13 +126,30 @@
     let allData = [];
     let userCoords = null;
 
-    // 預設色彩庫 (調色盤)
     const PALETTE = [
         '#E63946', '#2A9D8F', '#E76F51', '#457B9D', '#9C27B0', 
         '#FF9800', '#00BCD4', '#8BC34A', '#673AB7', '#795548', 
         '#3F51B5', '#E91E63'
     ];
     let colorMapping = {};
+
+    // 輔助函式：取得正規化的建議天數名稱
+    function getNormalizedDay(item) {
+        const dayVal = item['Suggested day'];
+        return (dayVal && dayVal.trim() !== '') ? dayVal.trim() : '未指定';
+    }
+
+    // 輔助函式：取得正規化的類別名稱
+    function getNormalizedCategory(item) {
+        const catVal = item.category;
+        return (catVal && catVal.trim() !== '') ? catVal.trim() : '未分類';
+    }
+
+    // 輔助函式：取得正規化的區域名稱
+    function getNormalizedDistrict(item) {
+        const distVal = item.district;
+        return (distVal && distVal.trim() !== '') ? distVal.trim() : '未分類';
+    }
 
     function initMap() {
         const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -158,7 +175,6 @@
         L.control.layers(baseMaps).addTo(map);
         markersLayer.addTo(map);
 
-        // 初始化 Legend 控制器
         legendControl.onAdd = function() {
             const div = L.DomUtil.create('div', 'legend-control');
             return div;
@@ -204,9 +220,9 @@
         const dayCounts = {};
 
         allData.forEach(item => {
-            const cat = item.category ? item.category.trim() : '未分類';
-            const dist = item.district ? item.district.trim() : '未分類';
-            const day = item['Suggested day'] ? item['Suggested day'].trim() : '未指定';
+            const cat = getNormalizedCategory(item);
+            const dist = getNormalizedDistrict(item);
+            const day = getNormalizedDay(item);
 
             catCounts[cat] = (catCounts[cat] || 0) + 1;
             distCounts[dist] = (distCounts[dist] || 0) + 1;
@@ -220,7 +236,7 @@
             catSelect.innerHTML += `<option value="${cat}">${cat} (${catCounts[cat]})</option>`;
         });
 
-        // 2. 建議天數 (Suggested Day)
+        // 2. 建議天數 (修正「未指定」比對)
         const daySelect = document.getElementById('dayFilter');
         daySelect.innerHTML = `<option value="ALL">全部天數 (${allData.length})</option>`;
         Object.keys(dayCounts).sort().forEach(day => {
@@ -235,16 +251,15 @@
         });
     }
 
-    // 更新顏色對應表與右下角 Legend
     function updateColorPaletteAndRender() {
         const mode = document.getElementById('colorModeSelect').value;
         const keys = new Set();
 
         allData.forEach(item => {
             if (mode === 'CATEGORY') {
-                keys.add(item.category ? item.category.trim() : '未分類');
+                keys.add(getNormalizedCategory(item));
             } else {
-                keys.add(item['Suggested day'] ? item['Suggested day'].trim() : '未指定');
+                keys.add(getNormalizedDay(item));
             }
         });
 
@@ -270,7 +285,6 @@
         filterAndRender();
     }
 
-    // 生成彩色標籤 Icon
     function createColoredMarkerIcon(color) {
         const svg = `
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 36" width="26" height="38">
@@ -308,9 +322,14 @@
             const matchesSearch = (item['Shop name'] || '').toLowerCase().includes(searchText) ||
                                   (item['remarks'] || '').toLowerCase().includes(searchText) ||
                                   (item['district'] || '').toLowerCase().includes(searchText);
-            const matchesCat = selectedCat === 'ALL' || (item.category || '').trim() === selectedCat;
-            const matchesDay = selectedDay === 'ALL' || (item['Suggested day'] || '').trim() === selectedDay;
-            const matchesDist = selectedDist === 'ALL' || (item.district || '').trim() === selectedDist;
+
+            const itemCat = getNormalizedCategory(item);
+            const itemDay = getNormalizedDay(item);
+            const itemDist = getNormalizedDistrict(item);
+
+            const matchesCat = selectedCat === 'ALL' || itemCat === selectedCat;
+            const matchesDay = selectedDay === 'ALL' || itemDay === selectedDay;
+            const matchesDist = selectedDist === 'ALL' || itemDist === selectedDist;
 
             return matchesSearch && matchesCat && matchesDay && matchesDist;
         });
@@ -342,10 +361,10 @@
 
             bounds.push([lat, lng]);
 
-            // 取得對應顏色
-            const key = mode === 'CATEGORY' 
-                ? (item.category ? item.category.trim() : '未分類') 
-                : (item['Suggested day'] ? item['Suggested day'].trim() : '未指定');
+            const itemCat = getNormalizedCategory(item);
+            const itemDay = getNormalizedDay(item);
+
+            const key = mode === 'CATEGORY' ? itemCat : itemDay;
             const color = colorMapping[key] || '#007bff';
 
             const gmapUrl = item['Google Maps Link'] || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
@@ -354,7 +373,7 @@
 
             const popupContent = `
                 <div class="popup-title">${item['Shop name']}</div>
-                <div class="popup-category">${item.category || ''} | ${item['Suggested day'] || '無指定天數'}</div>
+                <div class="popup-category">${itemCat} | ${itemDay}</div>
                 <div class="popup-remarks">${item.remarks || ''}</div>
                 <div class="popup-actions">
                     <a href="${gmapUrl}" class="gmap-link" target="_blank" rel="noopener">🗺️ 開啟 Google Maps</a>
@@ -369,13 +388,13 @@
             const card = document.createElement('div');
             card.className = 'card';
             let distDisplay = item._dist ? `<span style="color:#28a745; font-weight:bold;"> (${item._dist.toFixed(1)} km)</span>` : '';
-            let dayTag = item['Suggested day'] ? `<span class="tag tag-day">${item['Suggested day']}</span>` : '';
+            let dayTag = itemDay !== '未指定' ? `<span class="tag tag-day">${itemDay}</span>` : '';
 
             card.innerHTML = `
                 <div class="card-header">
                     <div class="card-title">${item['Shop name']}${distDisplay}</div>
                     <div>
-                        <span class="tag" style="border-left: 4px solid ${color};">${item.category || '未分類'}</span>
+                        <span class="tag" style="border-left: 4px solid ${color};">${itemCat}</span>
                         ${dayTag}
                     </div>
                 </div>
