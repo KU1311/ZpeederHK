@@ -19,10 +19,10 @@
         .controls { padding: 12px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.1); z-index: 3; }
         .filter-group { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
         .filter-group:last-child { margin-bottom: 0; }
-        select, input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; flex: 1; min-width: 110px; outline: none; }
+        select, input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; flex: 1; min-width: 105px; outline: none; }
         
         /* 按鈕樣式 */
-        .btn { padding: 8px 12px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; white-space: nowrap; font-weight: 500; }
+        .btn { padding: 8px 12px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; white-space: nowrap; font-weight: 500; }
         .btn:active { background: #0056b3; }
         .btn-toggle { background: #6c757d; }
         .btn-toggle.active { background: #28a745; }
@@ -36,8 +36,9 @@
         .card { background: white; border-radius: 10px; padding: 14px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); transition: transform 0.1s; cursor: pointer; }
         .card:active { transform: scale(0.99); }
         .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
-        .card-title { font-size: 16px; font-weight: bold; color: #1a1a1a; }
-        .tag { background: #e9ecef; color: #495057; font-size: 12px; padding: 2px 8px; border-radius: 12px; }
+        .card-title { font-size: 15px; font-weight: bold; color: #1a1a1a; }
+        .tag { background: #e9ecef; color: #495057; font-size: 12px; padding: 2px 8px; border-radius: 12px; margin-left: 4px; }
+        .tag-day { background: #e3f2fd; color: #0d47a1; }
         .card-district { font-size: 13px; color: #6c757d; margin-bottom: 6px; }
         .card-remarks { font-size: 13px; color: #444; line-height: 1.4; margin-bottom: 8px; }
         .card-footer { font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
@@ -53,13 +54,22 @@
         .popup-actions a.gmap-link { color: #28a745; font-weight: bold; }
         .popup-actions a.ig-link { color: #007bff; }
 
+        /* 地圖色彩圖例 Legend */
+        .legend-control { background: rgba(255, 255, 255, 0.95); padding: 8px 12px; border-radius: 8px; box-shadow: 0 1px 5px rgba(0,0,0,0.2); font-size: 12px; max-height: 160px; overflow-y: auto; }
+        .legend-title { font-weight: bold; margin-bottom: 6px; border-bottom: 1px solid #ddd; padding-bottom: 2px; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 4px; }
+        .legend-color { width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; display: inline-block; border: 1px solid #fff; box-shadow: 0 0 2px rgba(0,0,0,0.5); }
+
+        /* SVG 定制 Marker */
+        .custom-pin { display: flex; align-items: center; justify-content: center; }
+
         /* 電腦/平板雙欄 Layout */
         @media (min-width: 768px) {
             body { flex-direction: row; }
             #map { height: 100vh; flex: 1; }
             .sidebar { width: 420px; height: 100vh; box-shadow: 2px 0 8px rgba(0,0,0,0.1); }
             .list-container { display: block !important; max-height: none; flex: 1; border-top: none; }
-            .btn-toggle { display: none; } /* 電腦版隱藏切換按鈕 */
+            .btn-toggle { display: none; }
         }
     </style>
 </head>
@@ -69,9 +79,18 @@
         <!-- 控制與篩選面板 -->
         <div class="controls">
             <div class="filter-group">
-                <input type="text" id="searchInput" placeholder="搜尋店名、區域..." oninput="filterAndRender()">
+                <input type="text" id="searchInput" placeholder="搜尋店名、關鍵字..." oninput="filterAndRender()">
+                <select id="colorModeSelect" onchange="updateColorPaletteAndRender()">
+                    <option value="CATEGORY">🎨 顏色依據：類別</option>
+                    <option value="DAY">📅 顏色依據：建議天數</option>
+                </select>
+            </div>
+            <div class="filter-group">
                 <select id="categoryFilter" onchange="filterAndRender()">
                     <option value="ALL">全部分類</option>
+                </select>
+                <select id="dayFilter" onchange="filterAndRender()">
+                    <option value="ALL">全部天數</option>
                 </select>
             </div>
             <div class="filter-group">
@@ -86,29 +105,35 @@
             </div>
             <div class="filter-group">
                 <button class="btn" onclick="locateUser()">📍 我的位置</button>
-                <!-- 手機版開關清單按鈕 (Default 收起) -->
                 <button id="toggleListBtn" class="btn btn-toggle" onclick="toggleShopList()">📋 顯示清單</button>
             </div>
         </div>
 
-        <!-- 店家清單列表 (預設隱藏) -->
+        <!-- 店家清單列表 -->
         <div class="list-container" id="shopList"></div>
     </div>
 
-    <!-- 地圖面板 (預設滿版) -->
+    <!-- 地圖面板 -->
     <div id="map"></div>
 
 <script>
-    // 直接調用 Google Sheets 發佈之即時 CSV 連結
     const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQUD2hl2ESuxvAOGP9vEJNtSCO_sfAxvEFfbnPOYJnsDc4OylmzXlf3YGgRaHeFORjcpcSToFDhrhU5/pub?gid=1776966969&single=true&output=csv';
 
     let map;
     let markersLayer = L.layerGroup();
+    let legendControl = L.control({ position: 'bottomright' });
     let userMarker = null;
     let allData = [];
     let userCoords = null;
 
-    // 初始化地圖：Default OpenStreetMap (OSM)
+    // 預設色彩庫 (調色盤)
+    const PALETTE = [
+        '#E63946', '#2A9D8F', '#E76F51', '#457B9D', '#9C27B0', 
+        '#FF9800', '#00BCD4', '#8BC34A', '#673AB7', '#795548', 
+        '#3F51B5', '#E91E63'
+    ];
+    let colorMapping = {};
+
     function initMap() {
         const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
@@ -119,14 +144,6 @@
             attribution: 'Tiles © Esri'
         });
 
-        const esriImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: 'Tiles © Esri'
-        });
-
-        const cartoPositron = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '© CARTO'
-        });
-
         map = L.map('map', {
             center: [35.1795, 129.0756],
             zoom: 11,
@@ -135,20 +152,23 @@
 
         const baseMaps = {
             "OpenStreetMap (預設)": osm,
-            "Esri 街道圖": esriStreet,
-            "Esri 衛星圖": esriImagery,
-            "Carto 白底圖": cartoPositron
+            "Esri 街道圖": esriStreet
         };
 
         L.control.layers(baseMaps).addTo(map);
         markersLayer.addTo(map);
+
+        // 初始化 Legend 控制器
+        legendControl.onAdd = function() {
+            const div = L.DomUtil.create('div', 'legend-control');
+            return div;
+        };
+        legendControl.addTo(map);
     }
 
-    // 切換手機版清單展開/折疊
     function toggleShopList() {
         const listContainer = document.getElementById('shopList');
         const toggleBtn = document.getElementById('toggleListBtn');
-        
         listContainer.classList.toggle('open');
         
         if (listContainer.classList.contains('open')) {
@@ -158,11 +178,9 @@
             toggleBtn.textContent = '📋 顯示清單';
             toggleBtn.classList.remove('active');
         }
-
         setTimeout(() => map.invalidateSize(), 200);
     }
 
-    // 解析 Google Sheets 發佈的線上 CSV
     function loadCSV() {
         Papa.parse(CSV_URL, {
             download: true,
@@ -171,36 +189,45 @@
             complete: function(results) {
                 allData = results.data.filter(item => item['Shop name'] && item['lat'] && item['long']);
                 populateFilters();
-                filterAndRender();
+                updateColorPaletteAndRender();
             },
             error: function(err) {
-                console.error("線上 CSV 讀取失敗:", err);
-                alert("無法從 Google Sheets 載入資料，請確認網路連線與網址權限。");
+                console.error("CSV 載入失敗:", err);
+                alert("無法載入資料，請確認網路與網址權限。");
             }
         });
     }
 
-    // 動態建置選單並計算每個分類/區域的數量
     function populateFilters() {
         const catCounts = {};
         const distCounts = {};
+        const dayCounts = {};
 
         allData.forEach(item => {
             const cat = item.category ? item.category.trim() : '未分類';
             const dist = item.district ? item.district.trim() : '未分類';
+            const day = item['Suggested day'] ? item['Suggested day'].trim() : '未指定';
 
             catCounts[cat] = (catCounts[cat] || 0) + 1;
             distCounts[dist] = (distCounts[dist] || 0) + 1;
+            dayCounts[day] = (dayCounts[day] || 0) + 1;
         });
 
-        // 1. 分類下拉選單 (含 Count)
+        // 1. 分類
         const catSelect = document.getElementById('categoryFilter');
         catSelect.innerHTML = `<option value="ALL">全部分類 (${allData.length})</option>`;
         Object.keys(catCounts).forEach(cat => {
             catSelect.innerHTML += `<option value="${cat}">${cat} (${catCounts[cat]})</option>`;
         });
 
-        // 2. 區域下拉選單 (含 Count)
+        // 2. 建議天數 (Suggested Day)
+        const daySelect = document.getElementById('dayFilter');
+        daySelect.innerHTML = `<option value="ALL">全部天數 (${allData.length})</option>`;
+        Object.keys(dayCounts).sort().forEach(day => {
+            daySelect.innerHTML += `<option value="${day}">${day} (${dayCounts[day]})</option>`;
+        });
+
+        // 3. 區域
         const distSelect = document.getElementById('districtFilter');
         distSelect.innerHTML = `<option value="ALL">全部區域 (${allData.length})</option>`;
         Object.keys(distCounts).forEach(dist => {
@@ -208,7 +235,57 @@
         });
     }
 
-    // 計算距離
+    // 更新顏色對應表與右下角 Legend
+    function updateColorPaletteAndRender() {
+        const mode = document.getElementById('colorModeSelect').value;
+        const keys = new Set();
+
+        allData.forEach(item => {
+            if (mode === 'CATEGORY') {
+                keys.add(item.category ? item.category.trim() : '未分類');
+            } else {
+                keys.add(item['Suggested day'] ? item['Suggested day'].trim() : '未指定');
+            }
+        });
+
+        colorMapping = {};
+        const sortedKeys = Array.from(keys).sort();
+        sortedKeys.forEach((key, index) => {
+            colorMapping[key] = PALETTE[index % PALETTE.length];
+        });
+
+        // 更新圖例 (Legend)
+        const legendDiv = document.querySelector('.legend-control');
+        let legendHTML = `<div class="legend-title">${mode === 'CATEGORY' ? '類別圖例' : '天數圖例'}</div>`;
+        sortedKeys.forEach(key => {
+            legendHTML += `
+                <div class="legend-item">
+                    <span class="legend-color" style="background:${colorMapping[key]}"></span>
+                    <span>${key}</span>
+                </div>
+            `;
+        });
+        legendDiv.innerHTML = legendHTML;
+
+        filterAndRender();
+    }
+
+    // 生成彩色標籤 Icon
+    function createColoredMarkerIcon(color) {
+        const svg = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 36" width="26" height="38">
+                <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="${color}" stroke="#ffffff" stroke-width="1.5"/>
+                <circle cx="12" cy="12" r="4.5" fill="#ffffff"/>
+            </svg>`;
+        return L.divIcon({
+            className: 'custom-pin',
+            html: svg,
+            iconSize: [26, 38],
+            iconAnchor: [13, 38],
+            popupAnchor: [0, -34]
+        });
+    }
+
     function getDistance(lat1, lon1, lat2, lon2) {
         const R = 6371;
         const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -220,10 +297,10 @@
         return R * c;
     }
 
-    // 篩選與渲染
     function filterAndRender() {
         const searchText = document.getElementById('searchInput').value.toLowerCase();
         const selectedCat = document.getElementById('categoryFilter').value;
+        const selectedDay = document.getElementById('dayFilter').value;
         const selectedDist = document.getElementById('districtFilter').value;
         const sortBy = document.getElementById('sortSelect').value;
 
@@ -232,9 +309,10 @@
                                   (item['remarks'] || '').toLowerCase().includes(searchText) ||
                                   (item['district'] || '').toLowerCase().includes(searchText);
             const matchesCat = selectedCat === 'ALL' || (item.category || '').trim() === selectedCat;
+            const matchesDay = selectedDay === 'ALL' || (item['Suggested day'] || '').trim() === selectedDay;
             const matchesDist = selectedDist === 'ALL' || (item.district || '').trim() === selectedDist;
 
-            return matchesSearch && matchesCat && matchesDist;
+            return matchesSearch && matchesCat && matchesDay && matchesDist;
         });
 
         if (sortBy === 'NAME') {
@@ -249,13 +327,13 @@
         renderMapAndList(filtered);
     }
 
-    // 繪製地圖與卡片
     function renderMapAndList(data) {
         markersLayer.clearLayers();
         const listContainer = document.getElementById('shopList');
         listContainer.innerHTML = '';
 
         const bounds = [];
+        const mode = document.getElementById('colorModeSelect').value;
 
         data.forEach(item => {
             const lat = parseFloat(item.lat);
@@ -264,13 +342,19 @@
 
             bounds.push([lat, lng]);
 
+            // 取得對應顏色
+            const key = mode === 'CATEGORY' 
+                ? (item.category ? item.category.trim() : '未分類') 
+                : (item['Suggested day'] ? item['Suggested day'].trim() : '未指定');
+            const color = colorMapping[key] || '#007bff';
+
             const gmapUrl = item['Google Maps Link'] || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
             const links = (item['recommended by'] || '').split('\n').filter(l => l.trim() !== '');
             let igLinksHTML = links.map(link => `<a href="${link.trim()}" class="ig-link" target="_blank" rel="noopener">📍 IG 推薦貼文</a>`).join('<br>');
 
             const popupContent = `
                 <div class="popup-title">${item['Shop name']}</div>
-                <div class="popup-category">${item.category || ''} | ${item.district || ''}</div>
+                <div class="popup-category">${item.category || ''} | ${item['Suggested day'] || '無指定天數'}</div>
                 <div class="popup-remarks">${item.remarks || ''}</div>
                 <div class="popup-actions">
                     <a href="${gmapUrl}" class="gmap-link" target="_blank" rel="noopener">🗺️ 開啟 Google Maps</a>
@@ -278,17 +362,22 @@
                 </div>
             `;
 
-            const marker = L.marker([lat, lng]).bindPopup(popupContent);
+            const icon = createColoredMarkerIcon(color);
+            const marker = L.marker([lat, lng], { icon }).bindPopup(popupContent);
             markersLayer.addLayer(marker);
 
             const card = document.createElement('div');
             card.className = 'card';
             let distDisplay = item._dist ? `<span style="color:#28a745; font-weight:bold;"> (${item._dist.toFixed(1)} km)</span>` : '';
+            let dayTag = item['Suggested day'] ? `<span class="tag tag-day">${item['Suggested day']}</span>` : '';
 
             card.innerHTML = `
                 <div class="card-header">
                     <div class="card-title">${item['Shop name']}${distDisplay}</div>
-                    <span class="tag">${item.category || '未分類'}</span>
+                    <div>
+                        <span class="tag" style="border-left: 4px solid ${color};">${item.category || '未分類'}</span>
+                        ${dayTag}
+                    </div>
                 </div>
                 <div class="card-district">📍 ${item.city || ''} ${item.district || ''}</div>
                 <div class="card-remarks">${item.remarks || ''}</div>
@@ -313,7 +402,6 @@
         }
     }
 
-    // 使用者定位
     function locateUser() {
         if (!navigator.geolocation) {
             alert('您的瀏覽器不支援定位功能');
