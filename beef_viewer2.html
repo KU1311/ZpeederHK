@@ -50,11 +50,15 @@
             padding: 8px; font-size: 11px; margin-top: 8px; line-height: 1.4;
         }
     </style>
-    <!-- MapLibre GL JS -->
-    <link href="https://unpkg.com/maplibre-gl@3.6.0/dist/maplibre-gl.css" rel="stylesheet" />
-    <script src="https://unpkg.com/maplibre-gl@3.6.0/dist/maplibre-gl.js"></script>
+    <!-- 1. Leaflet CSS and JS (Already in your file) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
-    <!-- Leaflet MapLibre GL Bridge -->
+    <!-- 2. MapLibre GL CSS and JS -->
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    
+    <!-- 3. Correct MapLibre-Leaflet Bridge Plugin -->
     <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.20/leaflet-maplibre-gl.js"></script>
 </head>
 <body>
@@ -91,10 +95,10 @@
 <script>
     const map = L.map('map', { zoomSnap: 0.1 }).setView([22.3193, 114.1700], 18);
 
-    // OpenMapTiles / MapLibre 3D Vector Basemap Layer
-    const glLayer = L.mapboxGL({
-        style: 'https://demotiles.maplibre.org/style.json', // Replace with your OpenMapTiles style JSON URL / MapTiler Key
-        attribution: '&copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    // Replace L.tileLayer or L.mapboxGL with L.maplibreGL
+    L.maplibreGL({
+        style: 'https://demotiles.maplibre.org/style.json', // Replace with your OpenMapTiles style JSON URL
+        attribution: '&copy; <a href="https://www.openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(map);
 
     let activeLayers = [];
