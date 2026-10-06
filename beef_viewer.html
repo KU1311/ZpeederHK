@@ -6,11 +6,7 @@
     <title>ZpeederHK - 精確邊界分區版</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- MapLibre GL CSS & JS -->
-    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
-    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-    <!-- MapLibre Leaflet 外掛 -->
-    <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.20/leaflet-maplibre-gl.js"></script>
+    
     <style>
         body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
         #map { height: 100vh; width: 100%; }
@@ -89,9 +85,10 @@
 <script>
     const map = L.map('map', { zoomSnap: 0.1 }).setView([22.3193, 114.1700], 18);
 
-    // 載入 OpenFreeMap 向量灰階底圖
-    L.maplibreGL({
-        style: 'https://tiles.openfreemap.org/styles/positron'
+    // CartoDB Positron 免 Key 灰階底圖
+    L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
     }).addTo(map);
 
     let activeLayers = [];
