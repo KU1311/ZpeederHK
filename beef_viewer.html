@@ -84,9 +84,9 @@
 
 <script>
     const map = L.map('map', { zoomSnap: 0.1 }).setView([22.3193, 114.1700], 18);
-    L.tileLayer('https://tiles.openfreemap.org/styles/liberty/{z}/{x}/{y}.png', {
+    L.tileLayer('https://tiles.openfreemap.org/styles/positron/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        attribution: '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(map);
 
     let activeLayers = [];
