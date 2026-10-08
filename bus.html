@@ -94,7 +94,7 @@
 
         <!-- Search Input Bar -->
         <div class="relative flex-1">
-          <input type="text" id="route-input" placeholder="搜尋路線 (例如 102, 1A, 968, B1)..." 
+          <input type="text" id="route-input" placeholder="搜尋路線 (例如 595, 102, 1A, 968)..." 
             class="w-full bg-slate-800 text-sm text-white placeholder-slate-400 rounded-lg pl-8 pr-8 py-2 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
           <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-3 text-slate-400 text-xs"></i>
           <button id="clear-search" class="hidden absolute right-2.5 top-2.5 text-slate-400 hover:text-white text-xs">
@@ -195,7 +195,6 @@
       routePolylineLayer.addTo(map);
       allStopsLayer.addTo(map);
 
-      // Re-render stops on map pan/zoom when All-Stops toggle is active
       map.on('moveend', () => {
         if (isAllStopsMode) renderVisibleStops();
       });
@@ -240,7 +239,7 @@
       });
     }
 
-    // --- Preload & Combine KMB + Citybus Stops Data ---
+    // --- Preload & Combine KMB + Citybus Stops Data (Fixed Array Parsing) ---
     async function preloadAllStops() {
       try {
         const [kmbRes, ctbRes] = await Promise.all([
@@ -248,9 +247,13 @@
           fetch('https://rt.data.gov.hk/v2/transport/citybus/stop/CTB').then(r => r.json()).catch(() => ({ data: [] }))
         ]);
 
-        const kmbStops = (kmbRes.data || []).map(s => ({
+        const kmbRaw = Array.isArray(kmbRes?.data) ? kmbRes.data : [];
+        // Citybus API V2 returns array directly or inside data array depending on endpoint
+        const ctbRaw = Array.isArray(ctbRes) ? ctbRes : (Array.isArray(ctbRes?.data) ? ctbRes.data : []);
+
+        const kmbStops = kmbRaw.map(s => ({
           stop_id: s.stop,
-          name_tc: s.name_tc,
+          name_tc: s.name_tc || '巴士站',
           lat: parseFloat(s.lat),
           lng: parseFloat(s.long),
           companies: ['KMB'],
@@ -258,9 +261,9 @@
           ctb_id: null
         }));
 
-        const ctbStops = (ctbRes.data || []).map(s => ({
+        const ctbStops = ctbRaw.map(s => ({
           stop_id: s.stop,
-          name_tc: s.name_tc,
+          name_tc: s.name_tc || '巴士站',
           lat: parseFloat(s.lat),
           lng: parseFloat(s.long),
           companies: ['CTB'],
@@ -268,11 +271,11 @@
           ctb_id: s.stop
         }));
 
-        // Combine stops by geographic distance threshold (~30 meters)
+        // Combine stops by geographic distance threshold (~35 meters)
         const combined = [...kmbStops];
 
         ctbStops.forEach(ctb => {
-          if (!ctb.lat || !ctb.lng) return;
+          if (isNaN(ctb.lat) || isNaN(ctb.lng)) return;
           
           let matched = combined.find(item => {
             const distance = getDistanceInMeters(item.lat, item.lng, ctb.lat, ctb.lng);
@@ -308,7 +311,7 @@
       if (map.getZoom() < 13) return;
 
       const bounds = map.getBounds();
-      const visibleStops = combinedStopsDatabase.filter(s => bounds.contains([s.lat, s.lng]));
+      const visibleStops = combinedStopsDatabase.filter(s => !isNaN(s.lat) && !isNaN(s.lng) && bounds.contains([s.lat, s.lng]));
 
       visibleStops.forEach(stop => {
         let dotClass = 'dot-kmb';
@@ -368,45 +371,53 @@
       ]);
 
       // KMB Outbound
-      if (kmbOut.data && kmbOut.data.length > 0) {
+      if (Array.isArray(kmbOut.data) && kmbOut.data.length > 0) {
         const routeInfo = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route/${route}/outbound/1`).then(r=>r.json()).catch(()=>({data:{}}));
+        const dest = routeInfo.data?.dest_tc || '去程';
         variants.push({
           company: 'KMB',
-          dirText: `往 ${routeInfo.data?.dest_tc || '去程'}`,
+          dirText: `往 ${dest}`,
           stopsRaw: kmbOut.data,
-          dest: routeInfo.data?.dest_tc
+          dest: dest
         });
       }
 
       // KMB Inbound
-      if (kmbIn.data && kmbIn.data.length > 0) {
+      if (Array.isArray(kmbIn.data) && kmbIn.data.length > 0) {
         const routeInfo = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route/${route}/inbound/1`).then(r=>r.json()).catch(()=>({data:{}}));
+        const dest = routeInfo.data?.dest_tc || '回程';
         variants.push({
           company: 'KMB',
-          dirText: `往 ${routeInfo.data?.dest_tc || '回程'}`,
+          dirText: `往 ${dest}`,
           stopsRaw: kmbIn.data,
-          dest: routeInfo.data?.dest_tc
+          dest: dest
         });
       }
 
       // Citybus Outbound & Inbound
-      if (ctbOut.data && ctbOut.data.length > 0 || ctbIn.data && ctbIn.data.length > 0) {
-        const ctbRouteInfo = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/route/CTB/${route}`).then(r=>r.json()).catch(()=>({data:{}}));
-        
-        if (ctbOut.data && ctbOut.data.length > 0) {
+      const ctbOutStops = Array.isArray(ctbOut.data) ? ctbOut.data : (Array.isArray(ctbOut) ? ctbOut : []);
+      const ctbInStops = Array.isArray(ctbIn.data) ? ctbIn.data : (Array.isArray(ctbIn) ? ctbIn : []);
+
+      if (ctbOutStops.length > 0 || ctbInStops.length > 0) {
+        const ctbRouteRes = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/route/CTB/${route}`).then(r=>r.json()).catch(()=>({data:{}}));
+        const ctbData = ctbRouteRes.data || ctbRouteRes || {};
+
+        if (ctbOutStops.length > 0) {
+          const dest = ctbData.dest_tc || ctbData.orig_tc || '去程';
           variants.push({
             company: 'CTB',
-            dirText: `往 ${ctbRouteInfo.data?.dest_tc || '去程'}`,
-            stopsRaw: ctbOut.data,
-            dest: ctbRouteInfo.data?.dest_tc
+            dirText: `往 ${dest}`,
+            stopsRaw: ctbOutStops,
+            dest: dest
           });
         }
-        if (ctbIn.data && ctbIn.data.length > 0) {
+        if (ctbInStops.length > 0) {
+          const dest = ctbData.orig_tc || ctbData.dest_tc || '回程';
           variants.push({
             company: 'CTB',
-            dirText: `往 ${ctbRouteInfo.data?.orig_tc || '回程'}`,
-            stopsRaw: ctbIn.data,
-            dest: ctbRouteInfo.data?.orig_tc
+            dirText: `往 ${dest}`,
+            stopsRaw: ctbInStops,
+            dest: dest
           });
         }
       }
@@ -484,7 +495,9 @@
         marker.on('click', () => openStopEtaModal(stop));
         routeMarkersLayer.addLayer(marker);
 
-        polylinePoints.push([stop.lat, stop.lng]);
+        if (!isNaN(stop.lat) && !isNaN(stop.lng)) {
+          polylinePoints.push([stop.lat, stop.lng]);
+        }
       });
 
       if (polylinePoints.length > 0) {
@@ -506,9 +519,9 @@
             stop_id: s.stop,
             kmb_id: s.stop,
             seq: s.seq,
-            name_tc: res.data.name_tc,
-            lat: parseFloat(res.data.lat),
-            lng: parseFloat(res.data.long),
+            name_tc: res.data?.name_tc || '巴士站',
+            lat: parseFloat(res.data?.lat),
+            lng: parseFloat(res.data?.long),
             company: 'KMB',
             companies: ['KMB']
           };
@@ -521,13 +534,14 @@
       const details = await Promise.all(stopList.map(async (s) => {
         try {
           const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/stop/${s.stop}`).then(r => r.json());
+          const data = res.data || res || {};
           return {
             stop_id: s.stop,
             ctb_id: s.stop,
-            seq: s.seq,
-            name_tc: res.data.name_tc,
-            lat: parseFloat(res.data.lat),
-            lng: parseFloat(res.data.long),
+            seq: s.seq || s.eta_seq,
+            name_tc: data.name_tc || '巴士站',
+            lat: parseFloat(data.lat),
+            lng: parseFloat(data.long),
             company: 'CTB',
             companies: ['CTB']
           };
@@ -539,7 +553,7 @@
     // --- ALL-COMPANY STOP ETA AGGREGATION ---
     async function openStopEtaModal(stop) {
       selectedStop = stop;
-      document.getElementById('eta-stop-name').innerText = stop.name_tc;
+      document.getElementById('eta-stop-name').innerText = stop.name_tc || '巴士站';
       document.getElementById('eta-stop-sub').innerText = `營辦商: ${(stop.companies || [stop.company]).join(' + ')}`;
       document.getElementById('eta-modal').classList.remove('hidden');
 
@@ -565,7 +579,7 @@
 
         const promises = [];
 
-        // 1. Fetch KMB ETA if KMB station ID exists
+        // 1. Fetch KMB ETA
         if (kmbId) {
           promises.push(
             fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${kmbId}`)
@@ -573,7 +587,7 @@
               .then(json => (json.data || []).map(i => ({
                 co: i.co || 'KMB',
                 route: i.route,
-                dest: i.dest_tc,
+                dest: i.dest_tc || '未定終点',
                 eta: i.eta,
                 rmk: i.rmk_tc
               })))
@@ -581,18 +595,21 @@
           );
         }
 
-        // 2. Fetch CTB Batch ETA if Citybus station ID exists
+        // 2. Fetch CTB Batch ETA
         if (ctbId) {
           promises.push(
-            fetch(`https://rt.data.gov.hk/v1/transport/batch/stop-eta/ctb/${ctbId}`)
+            fetch(`https://rt.data.gov.hk/v2/transport/citybus/stop-eta/CTB/${ctbId}`)
               .then(r => r.json())
-              .then(json => (json.data || []).map(i => ({
-                co: 'CTB',
-                route: i.route,
-                dest: i.dest_tc,
-                eta: i.eta,
-                rmk: i.rmk_tc
-              })))
+              .then(json => {
+                const list = Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : []);
+                return list.map(i => ({
+                  co: 'CTB',
+                  route: i.route,
+                  dest: i.dest_tc || '未定終點',
+                  eta: i.eta,
+                  rmk: i.rmk_tc
+                }));
+              })
               .catch(() => [])
           );
         }
