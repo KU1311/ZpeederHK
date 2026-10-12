@@ -5,13 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ZpeederHK - 精確邊界分區版</title>
     
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    // <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
-    <!-- MapLibre GL CSS & JS -->
+    <!-- 1. Leaflet CSS & JS (必須放最前面) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- 2. MapLibre GL CSS & JS -->
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-    <!-- MapLibre Leaflet 外掛 -->
+    
+    <!-- 3. Leaflet-MapLibre 轉接外掛 (必須在 Leaflet 與 MapLibre 之後) -->
     <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.20/leaflet-maplibre-gl.js"></script>
+    
+    <!-- 4. 其他外掛 (pip, geopackage) -->
+    <script src="https://unpkg.com/@mapbox/leaflet-pip@1.1.0/leaflet-pip.js"></script>
+    <script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
     
     <style>
         body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
@@ -91,7 +100,7 @@
 <script>
     const map = L.map('map', { zoomSnap: 0.1 }).setView([22.3193, 114.1700], 18);
 
-    // 載入 OpenFreeMap 向量灰階底圖
+    // 載入 OpenFreeMap 灰階向量底圖 (免 Key、極速、無限制)
     L.maplibreGL({
         style: 'https://tiles.openfreemap.org/styles/positron'
     }).addTo(map);
