@@ -5,8 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ZpeederHK - 精確邊界分區版</title>
     
+    <!-- 1. Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
+    <!-- 2. MapLibre GL CSS -->
+    <link href="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css" rel="stylesheet" />
+
     <style>
         body { margin: 0; padding: 0; font-family: "Microsoft JhengHei", sans-serif; background: #f4f4f4; }
         #map { height: 100vh; width: 100%; }
@@ -26,12 +29,8 @@
         }
 
         .db-date-tag {
-            text-align: center;
-            font-size: 11px;
-            color: #7f8c8d;
-            margin-top: -6px;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
+            text-align: center; font-size: 11px; color: #7f8c8d;
+            margin-top: -6px; margin-bottom: 12px; padding-bottom: 8px;
             border-bottom: 1px dashed #eee;
         }
 
@@ -78,17 +77,19 @@
 
 <div id="map"></div>
 
+<!-- 必須嚴格按照以下 JS 順序載入 -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.19/leaflet-maplibre-gl.js"></script>
 <script src="https://unpkg.com/@mapbox/leaflet-pip@1.1.0/leaflet-pip.js"></script>
 <script src="https://unpkg.com/@ngageoint/leaflet-geopackage@2.0.5/dist/leaflet-geopackage.min.js"></script>
 
 <script>
     const map = L.map('map', { zoomSnap: 0.1 }).setView([22.3193, 114.1700], 18);
 
-    // CartoDB Positron 免 Key 灰階底圖
-    L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    // 載入 OpenFreeMap 免費灰階向量底圖 (完全不需要 Key)
+    L.maplibreGL({
+        style: 'https://tiles.openfreemap.org/styles/positron'
     }).addTo(map);
 
     let activeLayers = [];
@@ -109,21 +110,15 @@
                d >= 20 ? '#FC4E2A' : d > 0 ? '#FEB24C' : '#FFEDA0';
     }
 
-    // --- 自動設定當前日子與下一個小時時間 ---
     function setDefaultDateTime() {
         const now = new Date();
-        const dayOfWeek = now.getDay(); // 0 是週日, 6 是週六, 1-5 是平日
+        const dayOfWeek = now.getDay();
         const daySelect = document.getElementById('dayType');
         
-        if (dayOfWeek === 0) {
-            daySelect.value = "Sun";
-        } else if (dayOfWeek === 6) {
-            daySelect.value = "Sat";
-        } else {
-            daySelect.value = "Weekday";
-        }
+        if (dayOfWeek === 0) daySelect.value = "Sun";
+        else if (dayOfWeek === 6) daySelect.value = "Sat";
+        else daySelect.value = "Weekday";
 
-        // 向上取整至下一個小時 (例如 9:33 -> 10:00，若是 23:15 則循環至 00:00)
         let targetHour = now.getMinutes() > 0 ? now.getHours() + 1 : now.getHours();
         if (targetHour >= 24) targetHour = 0;
 
@@ -134,7 +129,6 @@
         display.innerText = String(targetHour).padStart(2, '0');
     }
 
-    // --- 抓取最後更新日期 ---
     async function loadLastUpdateDate() {
         const dateEl = document.getElementById('db-update-date');
         try {
@@ -148,15 +142,11 @@
         }
     }
 
-    // --- 初始化系統 ---
     async function initSystem() {
         const status = document.getElementById('status-indicator');
         status.style.display = 'block';
         
-        // 1. 初始化預設日期與時間
         setDefaultDateTime();
-        
-        // 2. 背景讀取更新日期
         loadLastUpdateDate();
         
         try {
@@ -198,7 +188,6 @@
         });
     }
 
-    // --- 精確分區加載邏輯 ---
     async function executeLoad() {
         const day = document.getElementById('dayType').value;
         const hour = document.getElementById('singleHour').value;
