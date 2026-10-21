@@ -26,7 +26,8 @@
     canvas { display: block; width: 100%; height: 100%; cursor: grab; }
     canvas:active { cursor: grabbing; }
 
-    .reset-btn { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0, 122, 255, 0.85); color: white; padding: 6px 12px; font-size: 12px; border-radius: 20px; border: none; font-weight: bold; backdrop-filter: blur(4px); }
+    .control-btn-group { position: absolute; top: 10px; right: 10px; z-index: 10; display: flex; gap: 6px; }
+    .overlay-btn { background: rgba(0, 122, 255, 0.85); color: white; padding: 6px 12px; font-size: 12px; border-radius: 20px; border: none; font-weight: bold; backdrop-filter: blur(4px); cursor: pointer; }
     
     .status-bar { display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-top: 6px; }
     
@@ -62,7 +63,10 @@
 
   <div class="card" style="padding: 8px;">
     <div id="canvas-container">
-      <button class="reset-btn" id="btnResetView" type="button">🎯 重置視角</button>
+      <div class="control-btn-group">
+        <button class="overlay-btn" id="btnToggleOsm" type="button">🗺️ 關閉底圖</button>
+        <button class="overlay-btn" id="btnResetView" type="button">🎯 重置視角</button>
+      </div>
       <canvas id="mapCanvas"></canvas>
     </div>
     <div class="status-bar">
@@ -122,9 +126,10 @@
 
   <script>
     document.addEventListener('DOMContentLoaded', function() {
-      let startGps = { lat: null, lng: null };
+      let startGps = { lat: 22.3193, lng: 114.1694 }; // 預設香港座標
       let isPdrRunning = false;
-      let startTimestampStr = ''; // 開始記錄的時間戳記 (YYYYMMDD_HHMM)
+      let startTimestampStr = ''; 
+      let showOsmMap = true; // 預設顯示 OSM 底圖
       
       let currentX = 0;
       let currentY = 0;
@@ -133,6 +138,10 @@
       
       let pathHistory = [];
       let stores = [];
+      let capturedPos = null;
+
+      // OSM Tile 快取記憶體
+      const tileCache = {};
 
       // 手勢拖拽與縮放變數
       let panX = 0;
@@ -168,7 +177,6 @@
         return true;
       }
 
-      // 產生格式為 YYYYMMDD_HHMM 的時間戳記
       function generateTimestamp() {
         let now = new Date();
         let YYYY = now.getFullYear();
@@ -187,9 +195,20 @@
       }
       document.getElementById('btnResetView').onclick = resetView;
 
+      // 切換底圖按鈕事件
+      const btnToggleOsm = document.getElementById('btnToggleOsm');
+      btnToggleOsm.onclick = function() {
+        showOsmMap = !showOsmMap;
+        btnToggleOsm.innerText = showOsmMap ? '🗺️ 關閉底圖' : '🗺️ 開啟底圖';
+        drawMap();
+      };
+
       // 1. GPS 定位
       document.getElementById('btnGps').onclick = function() {
         if (!ensureMallName()) return;
+
+        showOsmMap = true; // 開啟 GPS 定位時顯示 OSM 地圖
+        btnToggleOsm.innerText = '🗺️ 關閉底圖';
 
         if (!navigator.geolocation) {
           alert('此瀏覽器不支援 GPS');
@@ -203,11 +222,12 @@
             alert(`✅ GPS 定位成功！\nLat: ${startGps.lat.toFixed(6)}, Lng: ${startGps.lng.toFixed(6)}`);
             document.getElementById('btnGps').innerText = '✓ GPS 已定位';
             document.getElementById('btnGps').style.background = '#34c759';
+            resetView();
           },
           function(err) {
             alert('⚠️ GPS 定位失敗/超時，使用預設起點 (0,0)');
-            startGps = { lat: 22.3193, lng: 114.1694 };
             document.getElementById('btnGps').innerText = '使用預設起點';
+            resetView();
           },
           { enableHighAccuracy: true, timeout: 8000 }
         );
@@ -241,7 +261,6 @@
           currentX += STEP_LENGTH * Math.sin(rad);
           currentY += STEP_LENGTH * Math.cos(rad);
 
-          // 計算目前點的精確 GPS
           let pLat = null, pLng = null;
           if (startGps.lat && startGps.lng) {
             pLat = startGps.lat + (currentY / 111000.0);
@@ -292,24 +311,26 @@
           window.addEventListener('devicemotion', handleMotion);
 
           isPdrRunning = true;
-          startTimestampStr = generateTimestamp(); // 記錄開始時間 stamp
+          startTimestampStr = generateTimestamp();
+
+          // 🎯 開始 Record 後自動切換回黑色底圖
+          showOsmMap = false;
+          btnToggleOsm.innerText = '🗺️ 開啟底圖';
+
           btn.innerText = '⏹️ 停止 PDR 記錄';
           btn.className = 'danger';
           document.getElementById('btnAddStore').disabled = false;
           
-          let initialLat = startGps.lat || null;
-          let initialLng = startGps.lng || null;
-
           pathHistory.push({ 
             floor: getCurrentFloor(), 
             x: currentX, 
             y: currentY, 
-            lat: initialLat, 
-            lng: initialLng, 
+            lat: startGps.lat || null, 
+            lng: startGps.lng || null, 
             timestamp: new Date().toISOString() 
           });
           resizeCanvas();
-          alert('🚀 PDR 記錄已啟動！請開始行走。');
+          alert('🚀 PDR 記錄已啟動！底圖已自動切換為黑色模式。');
         } catch (err) {
           alert('感應器啟動失敗: ' + err.message);
         }
@@ -320,7 +341,56 @@
         renderStoreList();
       };
 
-      // 3. Canvas 黑底網格繪製
+      // --- OSM Tile 瓦片地圖計算與渲染算法 ---
+      function lon2tile(lon, zoom) { return Math.floor((lon + 180) / 360 * Math.pow(2, zoom)); }
+      function lat2tile(lat, zoom) { return Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom)); }
+      function tile2lon(x, z) { return (x / Math.pow(2, z) * 360 - 180); }
+      function tile2lat(y, z) {
+        let n = Math.PI - 2 * Math.PI * y / Math.pow(2, z);
+        return (180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))));
+      }
+
+      function drawOsmTiles(centerLat, centerLng, zoom, scale, toCanvasX, toCanvasY) {
+        let osmZoom = 18; // 使用標準街道層級
+        let tileX = lon2tile(centerLng, osmZoom);
+        let tileY = lat2tile(centerLat, osmZoom);
+
+        // 載入周圍 3x3 區域瓦片
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            let tx = tileX + dx;
+            let ty = tileY + dy;
+            let tileKey = `${osmZoom}_${tx}_${ty}`;
+
+            let tNwLat = tile2lat(ty, osmZoom);
+            let tNwLng = tile2lon(tx, osmZoom);
+            let tSeLat = tile2lat(ty + 1, osmZoom);
+            let tSeLng = tile2lon(tx + 1, osmZoom);
+
+            let relX_nw = (tNwLng - centerLng) * (111000.0 * Math.cos(centerLat * Math.PI / 180.0));
+            let relY_nw = (tNwLat - centerLat) * 111000.0;
+            let relX_se = (tSeLng - centerLng) * (111000.0 * Math.cos(centerLat * Math.PI / 180.0));
+            let relY_se = (tSeLat - centerLat) * 111000.0;
+
+            let cX1 = toCanvasX(relX_nw);
+            let cY1 = toCanvasY(relY_nw);
+            let cX2 = toCanvasX(relX_se);
+            let cY2 = toCanvasY(relY_se);
+
+            if (!tileCache[tileKey]) {
+              let img = new Image();
+              img.crossOrigin = "Anonymous";
+              img.src = `https://tile.openstreetmap.org/${osmZoom}/${tx}/${ty}.png`;
+              img.onload = () => drawMap();
+              tileCache[tileKey] = img;
+            } else if (tileCache[tileKey].complete) {
+              ctx.drawImage(tileCache[tileKey], cX1, cY1, cX2 - cX1, cY2 - cY1);
+            }
+          }
+        }
+      }
+
+      // 3. Canvas 繪製 (含 OSM 地圖與黑色網格切換)
       function drawMap() {
         if (!ctx) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -341,25 +411,30 @@
         const baseScale = Math.min((canvas.width - padding * 2) / rangeX, (canvas.height - padding * 2) / rangeY);
         const scale = baseScale * zoomFactor;
 
-        function toCanvasX(x) { 
-          return (canvas.width / 2) + panX + (x - (minX + maxX) / 2) * scale; 
+        function toCanvasX(x) { return (canvas.width / 2) + panX + (x - (minX + maxX) / 2) * scale; }
+        function toCanvasY(y) { return (canvas.height / 2) + panY - (y - (minY + maxY) / 2) * scale; }
+
+        // --- 底圖繪製邏輯 ---
+        if (showOsmMap && startGps.lat && startGps.lng) {
+          ctx.fillStyle = '#e0e0e0';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          drawOsmTiles(startGps.lat, startGps.lng, zoomFactor, scale, toCanvasX, toCanvasY);
+        } else {
+          // 黑色背景 + 網格
+          ctx.fillStyle = '#1c1c1e';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.strokeStyle = '#2c2c2e';
+          ctx.lineWidth = 1;
+          let gridSize = 30 * zoomFactor;
+          let startGridX = (panX % gridSize);
+          let startGridY = (panY % gridSize);
+
+          for (let x = startGridX; x < canvas.width; x += gridSize) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+          for (let y = startGridY; y < canvas.height; y += gridSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
         }
-        function toCanvasY(y) { 
-          return (canvas.height / 2) + panY - (y - (minY + maxY) / 2) * scale; 
-        }
 
-        ctx.fillStyle = '#1c1c1e';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        ctx.strokeStyle = '#2c2c2e';
-        ctx.lineWidth = 1;
-        let gridSize = 30 * zoomFactor;
-        let startGridX = (panX % gridSize);
-        let startGridY = (panY % gridSize);
-
-        for (let x = startGridX; x < canvas.width; x += gridSize) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
-        for (let y = startGridY; y < canvas.height; y += gridSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
-
+        // 畫藍色軌跡線
         if (floorPaths.length > 1) {
           ctx.beginPath();
           ctx.strokeStyle = '#007aff';
@@ -374,6 +449,7 @@
           ctx.stroke();
         }
 
+        // 畫橘色店舖標記點
         floorStores.forEach(s => {
           let sx = toCanvasX(s.finalX);
           let sy = toCanvasY(s.finalY);
@@ -382,11 +458,12 @@
           ctx.beginPath(); ctx.arc(sx, sy, Math.max(4, 6 * zoomFactor), 0, Math.PI * 2); ctx.fill();
           ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
 
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '11px sans-serif';
+          ctx.fillStyle = showOsmMap ? '#000000' : '#ffffff';
+          ctx.font = 'bold 11px sans-serif';
           ctx.fillText(`${s.shopNo} ${s.nameCn || s.nameEn}`, sx + 8, sy + 4);
         });
 
+        // 畫綠色當前位置點
         let curCX = toCanvasX(currentX);
         let curCY = toCanvasY(currentY);
         ctx.fillStyle = '#34c759';
@@ -449,7 +526,6 @@
           drawMap();
         }
       });
-
       canvas.addEventListener('touchend', () => {
         isDragging = false;
         initialPinchDist = null;
@@ -459,6 +535,12 @@
       const modal = document.getElementById('storeModal');
       
       document.getElementById('btnAddStore').onclick = function() {
+        capturedPos = {
+          x: currentX,
+          y: currentY,
+          heading: currentHeading
+        };
+
         document.getElementById('inputNameCn').value = '';
         document.getElementById('inputNameEn').value = '';
         document.getElementById('inputShopNo').value = '';
@@ -489,12 +571,12 @@
           nameEn: nameEn,
           shopNo: shopNo,
           remark: remark,
-          rawX: currentX,
-          rawY: currentY,
-          heading: currentHeading,
+          rawX: capturedPos ? capturedPos.x : currentX,
+          rawY: capturedPos ? capturedPos.y : currentY,
+          heading: capturedPos ? capturedPos.heading : currentHeading,
           side: side,
-          finalX: currentX,
-          finalY: currentY,
+          finalX: 0,
+          finalY: 0,
           finalLat: null,
           finalLng: null
         };
@@ -530,7 +612,7 @@
         }
       }
 
-            function renderStoreList() {
+      function renderStoreList() {
         const container = document.getElementById('storeListContainer');
         document.getElementById('storeCount').innerText = stores.length;
 
@@ -559,7 +641,6 @@
         });
       }
 
-      // 下載通用工具函數
       function downloadFile(content, fileName, mimeType) {
         let blob = new Blob([content], { type: mimeType });
         let url = URL.createObjectURL(blob);
@@ -572,7 +653,7 @@
         URL.revokeObjectURL(url);
       }
 
-      // 5. 匯出 CSV 與 QGIS 軌跡檔 (GPX)
+      // 5. 匯出 CSV 與 GPX
       document.getElementById('btnExportCsv').onclick = function() {
         if (stores.length === 0 && pathHistory.length === 0) {
           alert('目前無任何店舖或軌跡資料可供匯出！');
@@ -583,7 +664,6 @@
         let currentFloorStr = getCurrentFloor();
         let tsStr = startTimestampStr || generateTimestamp();
 
-        // --- A. 生成 CSV (店舖資料) ---
         if (stores.length > 0) {
           let csvRows = [];
           csvRows.push([
@@ -630,7 +710,6 @@
           downloadFile(csvString, csvFileName, 'text/csv;charset=utf-8;');
         }
 
-        // --- B. 生成 QGIS GPX 檔案 (軌跡資料) ---
         if (pathHistory.length > 0) {
           let gpxTrkpts = '';
           pathHistory.forEach(pt => {
@@ -661,7 +740,6 @@
 </gpx>`;
 
           let gpxFileName = `${mallNameStr}_${currentFloorStr}_track_${tsStr}.gpx`;
-          // 稍微延遲 300ms 觸發第二次下載，防止手機瀏覽器阻擋多檔下載
           setTimeout(() => {
             downloadFile(gpxContent, gpxFileName, 'application/gpx+xml;charset=utf-8;');
           }, 300);
