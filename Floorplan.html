@@ -72,7 +72,7 @@
     </div>
     <div class="grid-2" style="margin-top: 8px;">
       <button id="btnAddStore" type="button" disabled class="warning">＋ 新增店舖標記</button>
-      <button id="btnExportCsv" type="button" class="secondary">📥 匯出 CSV 檔</button>
+      <button id="btnExportCsv" type="button" class="secondary">📥 匯出 CSV 與 QGIS 軌跡(GPX)</button>
     </div>
   </div>
 
@@ -124,6 +124,7 @@
     document.addEventListener('DOMContentLoaded', function() {
       let startGps = { lat: null, lng: null };
       let isPdrRunning = false;
+      let startTimestampStr = ''; // 開始記錄的時間戳記 (YYYYMMDD_HHMM)
       
       let currentX = 0;
       let currentY = 0;
@@ -167,7 +168,17 @@
         return true;
       }
 
-      // 重置視角至全景
+      // 產生格式為 YYYYMMDD_HHMM 的時間戳記
+      function generateTimestamp() {
+        let now = new Date();
+        let YYYY = now.getFullYear();
+        let MM = String(now.getMonth() + 1).padStart(2, '0');
+        let DD = String(now.getDate()).padStart(2, '0');
+        let hh = String(now.getHours()).padStart(2, '0');
+        let mm = String(now.getMinutes()).padStart(2, '0');
+        return `${YYYY}${MM}${DD}_${hh}${mm}`;
+      }
+
       function resetView() {
         panX = 0;
         panY = 0;
@@ -230,10 +241,19 @@
           currentX += STEP_LENGTH * Math.sin(rad);
           currentY += STEP_LENGTH * Math.cos(rad);
 
+          // 計算目前點的精確 GPS
+          let pLat = null, pLng = null;
+          if (startGps.lat && startGps.lng) {
+            pLat = startGps.lat + (currentY / 111000.0);
+            pLng = startGps.lng + (currentX / (111000.0 * Math.cos(startGps.lat * Math.PI / 180.0)));
+          }
+
           pathHistory.push({
             floor: getCurrentFloor(),
             x: currentX,
             y: currentY,
+            lat: pLat,
+            lng: pLng,
             timestamp: new Date().toISOString()
           });
 
@@ -272,11 +292,22 @@
           window.addEventListener('devicemotion', handleMotion);
 
           isPdrRunning = true;
+          startTimestampStr = generateTimestamp(); // 記錄開始時間 stamp
           btn.innerText = '⏹️ 停止 PDR 記錄';
           btn.className = 'danger';
           document.getElementById('btnAddStore').disabled = false;
           
-          pathHistory.push({ floor: getCurrentFloor(), x: currentX, y: currentY, timestamp: new Date().toISOString() });
+          let initialLat = startGps.lat || null;
+          let initialLng = startGps.lng || null;
+
+          pathHistory.push({ 
+            floor: getCurrentFloor(), 
+            x: currentX, 
+            y: currentY, 
+            lat: initialLat, 
+            lng: initialLng, 
+            timestamp: new Date().toISOString() 
+          });
           resizeCanvas();
           alert('🚀 PDR 記錄已啟動！請開始行走。');
         } catch (err) {
@@ -289,7 +320,7 @@
         renderStoreList();
       };
 
-      // 3. Canvas 黑底網格繪製 (含 Pan & Zoom 矩陣轉化)
+      // 3. Canvas 黑底網格繪製
       function drawMap() {
         if (!ctx) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -317,7 +348,6 @@
           return (canvas.height / 2) + panY - (y - (minY + maxY) / 2) * scale; 
         }
 
-        // 畫黑底背景與動態網格
         ctx.fillStyle = '#1c1c1e';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -330,7 +360,6 @@
         for (let x = startGridX; x < canvas.width; x += gridSize) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
         for (let y = startGridY; y < canvas.height; y += gridSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
 
-        // 畫藍色行走軌跡
         if (floorPaths.length > 1) {
           ctx.beginPath();
           ctx.strokeStyle = '#007aff';
@@ -345,7 +374,6 @@
           ctx.stroke();
         }
 
-        // 畫橘色店舖標記點
         floorStores.forEach(s => {
           let sx = toCanvasX(s.finalX);
           let sy = toCanvasY(s.finalY);
@@ -359,7 +387,6 @@
           ctx.fillText(`${s.shopNo} ${s.nameCn || s.nameEn}`, sx + 8, sy + 4);
         });
 
-        // 畫綠色當前位置點
         let curCX = toCanvasX(currentX);
         let curCY = toCanvasY(currentY);
         ctx.fillStyle = '#34c759';
@@ -367,7 +394,7 @@
         ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
       }
 
-      // --- 手勢事件 (Pan & Zoom) 監聽 ---
+      // 手勢平移與縮放
       canvas.addEventListener('mousedown', (e) => {
         isDragging = true;
         startMouseX = e.clientX - panX;
@@ -383,16 +410,14 @@
 
       window.addEventListener('mouseup', () => { isDragging = false; });
 
-      // 滑鼠滾輪縮放
       canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
-        if (e.deltaY < 0) zoomFactor *= 1.1; // 放大
-        else zoomFactor /= 1.1;             // 縮小
-        zoomFactor = Math.min(Math.max(0.3, zoomFactor), 5.0); // 限制縮放範圍 0.3x - 5.0x
+        if (e.deltaY < 0) zoomFactor *= 1.1;
+        else zoomFactor /= 1.1;
+        zoomFactor = Math.min(Math.max(0.3, zoomFactor), 5.0);
         drawMap();
       }, { passive: false });
 
-      // 手機觸控雙指捏合與單指平移
       canvas.addEventListener('touchstart', (e) => {
         if (e.touches.length === 1) {
           isDragging = true;
@@ -469,7 +494,9 @@
           heading: currentHeading,
           side: side,
           finalX: currentX,
-          finalY: currentY
+          finalY: currentY,
+          finalLat: null,
+          finalLng: null
         };
 
         calculateOffsetPos(storeObj);
@@ -488,17 +515,22 @@
         if (offsetDist === 0) {
           store.finalX = store.rawX;
           store.finalY = store.rawY;
-          return;
+        } else {
+          let sideHeading = store.heading + 90;
+          let rad = (sideHeading * Math.PI) / 180;
+          store.finalX = store.rawX + offsetDist * Math.sin(rad);
+          store.finalY = store.rawY + offsetDist * Math.cos(rad);
         }
 
-        let sideHeading = store.heading + 90;
-        let rad = (sideHeading * Math.PI) / 180;
-
-        store.finalX = store.rawX + offsetDist * Math.sin(rad);
-        store.finalY = store.rawY + offsetDist * Math.cos(rad);
+        if (startGps.lat && startGps.lng) {
+          let deltaLat = store.finalY / 111000.0;
+          let deltaLng = store.finalX / (111000.0 * Math.cos(startGps.lat * Math.PI / 180.0));
+          store.finalLat = startGps.lat + deltaLat;
+          store.finalLng = startGps.lng + deltaLng;
+        }
       }
 
-      function renderStoreList() {
+            function renderStoreList() {
         const container = document.getElementById('storeListContainer');
         document.getElementById('storeCount').innerText = stores.length;
 
@@ -509,6 +541,7 @@
 
         container.innerHTML = '';
         stores.forEach(s => {
+          let gpsText = (s.finalLat && s.finalLng) ? `${s.finalLat.toFixed(6)}, ${s.finalLng.toFixed(6)}` : '尚未定位 GPS 起點';
           let div = document.createElement('div');
           div.className = 'store-item';
           div.innerHTML = `
@@ -518,64 +551,121 @@
             </header>
             <div><strong>備註:</strong> ${s.remark || '無'}</div>
             <div style="font-size:11px; color:#8e8e93; margin-top:2px;">
-              軌跡點 (Raw): (${s.rawX.toFixed(2)}, ${s.rawY.toFixed(2)})<br>
-              <strong>精確座標 (Final): (${s.finalX.toFixed(2)}m, ${s.finalY.toFixed(2)}m)</strong>
+              相對座標 (Final): (${s.finalX.toFixed(2)}m, ${s.finalY.toFixed(2)}m)<br>
+              <strong>精確 GPS (Final): ${gpsText}</strong>
             </div>
           `;
           container.appendChild(div);
         });
       }
 
-           // 5. 匯出 CSV
-      document.getElementById('btnExportCsv').onclick = function() {
-        if (stores.length === 0) {
-          alert('目前無可匯出的店舖資料！');
-          return;
-        }
-
-        let csvRows = [];
-        csvRows.push([
-          'Mall_Name',
-          'Floor',
-          'Shop_No',
-          'Name_CN',
-          'Name_EN',
-          'Remark',
-          'Side_Offset',
-          'GPS_Start_Lat',
-          'GPS_Start_Lng',
-          'Raw_Pos_X_m',
-          'Raw_Pos_Y_m',
-          'Final_Pos_X_m',
-          'Final_Pos_Y_m'
-        ].join(','));
-
-        stores.forEach(s => {
-          let row = [
-            `"${s.mall}"`,
-            `"${s.floor}"`,
-            `"${s.shopNo}"`,
-            `"${s.nameCn}"`,
-            `"${s.nameEn}"`,
-            `"${s.remark}"`,
-            `"${s.side}"`,
-            startGps.lat || '',
-            startGps.lng || '',
-            s.rawX.toFixed(3),
-            s.rawY.toFixed(3),
-            s.finalX.toFixed(3),
-            s.finalY.toFixed(3)
-          ];
-          csvRows.push(row.join(','));
-        });
-
-        let csvString = '\uFEFF' + csvRows.join('\n');
-        let blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+      // 下載通用工具函數
+      function downloadFile(content, fileName, mimeType) {
+        let blob = new Blob([content], { type: mimeType });
         let url = URL.createObjectURL(blob);
         let a = document.createElement('a');
         a.href = url;
-        a.download = `${document.getElementById('mallName').value}_stores.csv`;
+        a.download = fileName;
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      // 5. 匯出 CSV 與 QGIS 軌跡檔 (GPX)
+      document.getElementById('btnExportCsv').onclick = function() {
+        if (stores.length === 0 && pathHistory.length === 0) {
+          alert('目前無任何店舖或軌跡資料可供匯出！');
+          return;
+        }
+
+        let mallNameStr = document.getElementById('mallName').value.trim() || 'Mall';
+        let currentFloorStr = getCurrentFloor();
+        let tsStr = startTimestampStr || generateTimestamp();
+
+        // --- A. 生成 CSV (店舖資料) ---
+        if (stores.length > 0) {
+          let csvRows = [];
+          csvRows.push([
+            'Mall_Name',
+            'Floor',
+            'Shop_No',
+            'Name_CN',
+            'Name_EN',
+            'Remark',
+            'Side_Offset',
+            'GPS_Start_Lat',
+            'GPS_Start_Lng',
+            'Raw_Pos_X_m',
+            'Raw_Pos_Y_m',
+            'Final_Pos_X_m',
+            'Final_Pos_Y_m',
+            'Final_Lat',
+            'Final_Lng'
+          ].join(','));
+
+          stores.forEach(s => {
+            let row = [
+              `"${s.mall}"`,
+              `"${s.floor}"`,
+              `"${s.shopNo}"`,
+              `"${s.nameCn}"`,
+              `"${s.nameEn}"`,
+              `"${s.remark}"`,
+              `"${s.side}"`,
+              startGps.lat || '',
+              startGps.lng || '',
+              s.rawX.toFixed(3),
+              s.rawY.toFixed(3),
+              s.finalX.toFixed(3),
+              s.finalY.toFixed(3),
+              s.finalLat ? s.finalLat.toFixed(7) : '',
+              s.finalLng ? s.finalLng.toFixed(7) : ''
+            ];
+            csvRows.push(row.join(','));
+          });
+
+          let csvString = '\uFEFF' + csvRows.join('\n');
+          let csvFileName = `${mallNameStr}_${currentFloorStr}_stores_${tsStr}.csv`;
+          downloadFile(csvString, csvFileName, 'text/csv;charset=utf-8;');
+        }
+
+        // --- B. 生成 QGIS GPX 檔案 (軌跡資料) ---
+        if (pathHistory.length > 0) {
+          let gpxTrkpts = '';
+          pathHistory.forEach(pt => {
+            let lat = pt.lat ? pt.lat.toFixed(7) : (startGps.lat || 0);
+            let lng = pt.lng ? pt.lng.toFixed(7) : (startGps.lng || 0);
+            gpxTrkpts += `
+      <trkpt lat="${lat}" lon="${lng}">
+        <time>${pt.timestamp}</time>
+        <extensions>
+          <floor>${pt.floor}</floor>
+          <relX>${pt.x.toFixed(3)}</relX>
+          <relY>${pt.y.toFixed(3)}</relY>
+        </extensions>
+      </trkpt>`;
+          });
+
+          let gpxContent = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="MallPDRMapper" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>${mallNameStr} - ${currentFloorStr} Track</name>
+    <time>${new Date().toISOString()}</time>
+  </metadata>
+  <trk>
+    <name>${mallNameStr} ${currentFloorStr}</name>
+    <trkseg>${gpxTrkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+
+          let gpxFileName = `${mallNameStr}_${currentFloorStr}_track_${tsStr}.gpx`;
+          // 稍微延遲 300ms 觸發第二次下載，防止手機瀏覽器阻擋多檔下載
+          setTimeout(() => {
+            downloadFile(gpxContent, gpxFileName, 'application/gpx+xml;charset=utf-8;');
+          }, 300);
+        }
       };
 
       resizeCanvas();
