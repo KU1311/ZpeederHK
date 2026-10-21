@@ -22,8 +22,11 @@
     button.warning { background: #ff9500; }
     button.small { padding: 6px 10px; font-size: 12px; width: auto; }
     
-    #canvas-container { width: 100%; height: 280px; background: #1c1c1e; border-radius: 12px; position: relative; }
-    canvas { display: block; width: 100%; height: 100%; }
+    #canvas-container { width: 100%; height: 320px; background: #1c1c1e; border-radius: 12px; position: relative; overflow: hidden; touch-action: none; }
+    canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+    canvas:active { cursor: grabbing; }
+
+    .reset-btn { position: absolute; top: 10px; right: 10px; z-index: 10; background: rgba(0, 122, 255, 0.85); color: white; padding: 6px 12px; font-size: 12px; border-radius: 20px; border: none; font-weight: bold; backdrop-filter: blur(4px); }
     
     .status-bar { display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-top: 6px; }
     
@@ -47,16 +50,8 @@
         <input type="text" id="mallName" placeholder="請先輸入商場名稱">
       </div>
       <div>
-        <label>當前樓層</label>
-        <select id="floorSelect">
-          <option value="B2">B2 樓</option>
-          <option value="B1">B1 樓</option>
-          <option value="G" selected>G 樓</option>
-          <option value="L1">L1 樓</option>
-          <option value="L2">L2 樓</option>
-          <option value="L3">L3 樓</option>
-          <option value="L4">L4 樓</option>
-        </select>
+        <label>當前樓層 (手動輸入)</label>
+        <input type="text" id="floorInput" value="G" placeholder="例: G, L1, B2">
       </div>
     </div>
     <div class="grid-2">
@@ -67,6 +62,7 @@
 
   <div class="card" style="padding: 8px;">
     <div id="canvas-container">
+      <button class="reset-btn" id="btnResetView" type="button">🎯 重置視角</button>
       <canvas id="mapCanvas"></canvas>
     </div>
     <div class="status-bar">
@@ -125,13 +121,9 @@
   </div>
 
   <script>
-    // 確保全部 DOM 載入後才執行邏輯
     document.addEventListener('DOMContentLoaded', function() {
-      alert('網頁程式載入成功！'); // 測試用：開啟網頁時如果看到這行，代表 JS 已成功運作
-
       let startGps = { lat: null, lng: null };
       let isPdrRunning = false;
-      let currentFloor = 'G';
       
       let currentX = 0;
       let currentY = 0;
@@ -141,13 +133,26 @@
       let pathHistory = [];
       let stores = [];
 
+      // 手勢拖拽與縮放變數
+      let panX = 0;
+      let panY = 0;
+      let zoomFactor = 1.0;
+      let isDragging = false;
+      let startMouseX = 0, startMouseY = 0;
+      let initialPinchDist = null;
+
       const canvas = document.getElementById('mapCanvas');
       const ctx = canvas ? canvas.getContext('2d') : null;
+
+      function getCurrentFloor() {
+        let f = document.getElementById('floorInput').value.trim();
+        return f ? f : 'G';
+      }
 
       function resizeCanvas() {
         if (!canvas) return;
         canvas.width = canvas.offsetWidth || 300;
-        canvas.height = canvas.offsetHeight || 280;
+        canvas.height = canvas.offsetHeight || 320;
         drawMap();
       }
 
@@ -162,11 +167,19 @@
         return true;
       }
 
-      // 1. GPS 點擊事件
+      // 重置視角至全景
+      function resetView() {
+        panX = 0;
+        panY = 0;
+        zoomFactor = 1.0;
+        drawMap();
+      }
+      document.getElementById('btnResetView').onclick = resetView;
+
+      // 1. GPS 定位
       document.getElementById('btnGps').onclick = function() {
         if (!ensureMallName()) return;
 
-        alert('開始嘗試定位...');
         if (!navigator.geolocation) {
           alert('此瀏覽器不支援 GPS');
           return;
@@ -189,7 +202,7 @@
         );
       };
 
-      // 2. PDR 點擊事件
+      // 2. PDR 開啟 / 停止切換
       const STEP_THRESHOLD = 1.8;
       const STEP_LENGTH = 0.65;
       let isPeak = false;
@@ -218,13 +231,13 @@
           currentY += STEP_LENGTH * Math.cos(rad);
 
           pathHistory.push({
-            floor: currentFloor,
+            floor: getCurrentFloor(),
             x: currentX,
             y: currentY,
             timestamp: new Date().toISOString()
           });
 
-          document.getElementById('valPoints').innerText = pathHistory.filter(p => p.floor === currentFloor).length;
+          document.getElementById('valPoints').innerText = pathHistory.filter(p => p.floor === getCurrentFloor()).length;
           drawMap();
         } else if (delta < STEP_THRESHOLD) {
           isPeak = false;
@@ -232,6 +245,18 @@
       }
 
       document.getElementById('btnStartPdr').onclick = async function() {
+        const btn = document.getElementById('btnStartPdr');
+
+        if (isPdrRunning) {
+          window.removeEventListener('deviceorientation', handleOrientation);
+          window.removeEventListener('devicemotion', handleMotion);
+          isPdrRunning = false;
+          btn.innerText = '2. 開始 PDR 行走';
+          btn.className = 'secondary';
+          alert('⏹️ PDR 記錄已停止！');
+          return;
+        }
+
         if (!ensureMallName()) return;
 
         try {
@@ -247,10 +272,11 @@
           window.addEventListener('devicemotion', handleMotion);
 
           isPdrRunning = true;
-          document.getElementById('btnStartPdr').innerText = 'PDR 記錄中...';
+          btn.innerText = '⏹️ 停止 PDR 記錄';
+          btn.className = 'danger';
           document.getElementById('btnAddStore').disabled = false;
           
-          pathHistory.push({ floor: currentFloor, x: currentX, y: currentY, timestamp: new Date().toISOString() });
+          pathHistory.push({ floor: getCurrentFloor(), x: currentX, y: currentY, timestamp: new Date().toISOString() });
           resizeCanvas();
           alert('🚀 PDR 記錄已啟動！請開始行走。');
         } catch (err) {
@@ -258,19 +284,19 @@
         }
       };
 
-      document.getElementById('floorSelect').onchange = function(e) {
-        currentFloor = e.target.value;
-        drawMap();
+      document.getElementById('floorInput').onchange = function() {
+        resetView();
         renderStoreList();
       };
 
-      // 3. Canvas 畫圖
+      // 3. Canvas 黑底網格繪製 (含 Pan & Zoom 矩陣轉化)
       function drawMap() {
         if (!ctx) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        const floorPaths = pathHistory.filter(p => p.floor === currentFloor);
-        const floorStores = stores.filter(s => s.floor === currentFloor);
+        let cFloor = getCurrentFloor();
+        const floorPaths = pathHistory.filter(p => p.floor === cFloor);
+        const floorStores = stores.filter(s => s.floor === cFloor);
 
         let minX = currentX, maxX = currentX, minY = currentY, maxY = currentY;
         floorPaths.forEach(p => {
@@ -278,23 +304,37 @@
           minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
         });
 
-        const padding = 30;
+        const padding = 40;
         const rangeX = (maxX - minX) || 10;
         const rangeY = (maxY - minY) || 10;
-        const scale = Math.min((canvas.width - padding * 2) / rangeX, (canvas.height - padding * 2) / rangeY);
+        const baseScale = Math.min((canvas.width - padding * 2) / rangeX, (canvas.height - padding * 2) / rangeY);
+        const scale = baseScale * zoomFactor;
 
-        function toCanvasX(x) { return canvas.width / 2 + (x - (minX + maxX) / 2) * scale; }
-        function toCanvasY(y) { return canvas.height / 2 - (y - (minY + maxY) / 2) * scale; }
+        function toCanvasX(x) { 
+          return (canvas.width / 2) + panX + (x - (minX + maxX) / 2) * scale; 
+        }
+        function toCanvasY(y) { 
+          return (canvas.height / 2) + panY - (y - (minY + maxY) / 2) * scale; 
+        }
+
+        // 畫黑底背景與動態網格
+        ctx.fillStyle = '#1c1c1e';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         ctx.strokeStyle = '#2c2c2e';
         ctx.lineWidth = 1;
-        for (let x = 0; x < canvas.width; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
-        for (let y = 0; y < canvas.height; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+        let gridSize = 30 * zoomFactor;
+        let startGridX = (panX % gridSize);
+        let startGridY = (panY % gridSize);
 
+        for (let x = startGridX; x < canvas.width; x += gridSize) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+        for (let y = startGridY; y < canvas.height; y += gridSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+
+        // 畫藍色行走軌跡
         if (floorPaths.length > 1) {
           ctx.beginPath();
           ctx.strokeStyle = '#007aff';
-          ctx.lineWidth = 4;
+          ctx.lineWidth = Math.max(2, 4 * zoomFactor);
           ctx.lineJoin = 'round';
           floorPaths.forEach((pt, i) => {
             let cx = toCanvasX(pt.x);
@@ -305,12 +345,13 @@
           ctx.stroke();
         }
 
+        // 畫橘色店舖標記點
         floorStores.forEach(s => {
           let sx = toCanvasX(s.finalX);
           let sy = toCanvasY(s.finalY);
 
           ctx.fillStyle = '#ff9500';
-          ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(sx, sy, Math.max(4, 6 * zoomFactor), 0, Math.PI * 2); ctx.fill();
           ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
 
           ctx.fillStyle = '#ffffff';
@@ -318,12 +359,76 @@
           ctx.fillText(`${s.shopNo} ${s.nameCn || s.nameEn}`, sx + 8, sy + 4);
         });
 
+        // 畫綠色當前位置點
         let curCX = toCanvasX(currentX);
         let curCY = toCanvasY(currentY);
         ctx.fillStyle = '#34c759';
-        ctx.beginPath(); ctx.arc(curCX, curCY, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(curCX, curCY, Math.max(6, 8 * zoomFactor), 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
       }
+
+      // --- 手勢事件 (Pan & Zoom) 監聽 ---
+      canvas.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startMouseX = e.clientX - panX;
+        startMouseY = e.clientY - panY;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        panX = e.clientX - startMouseX;
+        panY = e.clientY - startMouseY;
+        drawMap();
+      });
+
+      window.addEventListener('mouseup', () => { isDragging = false; });
+
+      // 滑鼠滾輪縮放
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (e.deltaY < 0) zoomFactor *= 1.1; // 放大
+        else zoomFactor /= 1.1;             // 縮小
+        zoomFactor = Math.min(Math.max(0.3, zoomFactor), 5.0); // 限制縮放範圍 0.3x - 5.0x
+        drawMap();
+      }, { passive: false });
+
+      // 手機觸控雙指捏合與單指平移
+      canvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startMouseX = e.touches[0].clientX - panX;
+          startMouseY = e.touches[0].clientY - panY;
+        } else if (e.touches.length === 2) {
+          isDragging = false;
+          initialPinchDist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+        }
+      });
+
+      canvas.addEventListener('touchmove', (e) => {
+        if (isDragging && e.touches.length === 1) {
+          panX = e.touches[0].clientX - startMouseX;
+          panY = e.touches[0].clientY - startMouseY;
+          drawMap();
+        } else if (e.touches.length === 2 && initialPinchDist) {
+          let dist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+          let factor = dist / initialPinchDist;
+          zoomFactor *= factor;
+          zoomFactor = Math.min(Math.max(0.3, zoomFactor), 5.0);
+          initialPinchDist = dist;
+          drawMap();
+        }
+      });
+
+      canvas.addEventListener('touchend', () => {
+        isDragging = false;
+        initialPinchDist = null;
+      });
 
       // 4. 店舖標記 Modal
       const modal = document.getElementById('storeModal');
@@ -354,7 +459,7 @@
         let storeObj = {
           id: 'store_' + Date.now(),
           mall: document.getElementById('mallName').value,
-          floor: currentFloor,
+          floor: getCurrentFloor(),
           nameCn: nameCn,
           nameEn: nameEn,
           shopNo: shopNo,
@@ -413,14 +518,15 @@
             </header>
             <div><strong>備註:</strong> ${s.remark || '無'}</div>
             <div style="font-size:11px; color:#8e8e93; margin-top:2px;">
-              精確座標 X: ${s.finalX.toFixed(2)}m, Y: ${s.finalY.toFixed(2)}m
+              軌跡點 (Raw): (${s.rawX.toFixed(2)}, ${s.rawY.toFixed(2)})<br>
+              <strong>精確座標 (Final): (${s.finalX.toFixed(2)}m, ${s.finalY.toFixed(2)}m)</strong>
             </div>
           `;
           container.appendChild(div);
         });
       }
 
-      // 5. 匯出 CSV
+           // 5. 匯出 CSV
       document.getElementById('btnExportCsv').onclick = function() {
         if (stores.length === 0) {
           alert('目前無可匯出的店舖資料！');
@@ -428,7 +534,21 @@
         }
 
         let csvRows = [];
-        csvRows.push(['Mall_Name', 'Floor', 'Shop_No', 'Name_CN', 'Name_EN', 'Remark', 'Side_Offset', 'GPS_Start_Lat', 'GPS_Start_Lng', 'Final_Pos_X_m', 'Final_Pos_Y_m'].join(','));
+        csvRows.push([
+          'Mall_Name',
+          'Floor',
+          'Shop_No',
+          'Name_CN',
+          'Name_EN',
+          'Remark',
+          'Side_Offset',
+          'GPS_Start_Lat',
+          'GPS_Start_Lng',
+          'Raw_Pos_X_m',
+          'Raw_Pos_Y_m',
+          'Final_Pos_X_m',
+          'Final_Pos_Y_m'
+        ].join(','));
 
         stores.forEach(s => {
           let row = [
@@ -441,6 +561,8 @@
             `"${s.side}"`,
             startGps.lat || '',
             startGps.lng || '',
+            s.rawX.toFixed(3),
+            s.rawY.toFixed(3),
             s.finalX.toFixed(3),
             s.finalY.toFixed(3)
           ];
