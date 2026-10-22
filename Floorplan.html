@@ -39,7 +39,6 @@
     .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
     .slider-row input[type=range] { flex: 1; }
 
-    /* 5 欄式 Status Bar 包含動態步長監控 */
     .status-bar { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1.2fr; gap: 4px; font-size: 11px; color: #666; margin-top: 6px; text-align: center; }
     .status-bar div { background: #e5e5ea; padding: 4px; border-radius: 4px; }
     
@@ -54,7 +53,7 @@
 </head>
 <body>
 
-  <h2>🏬 商場室內軌跡標記工具 (Weinberg 動態步長版)</h2>
+  <h2>🏬 商場室內軌跡標記工具</h2>
 
   <div class="card">
     <div class="grid-2" style="margin-bottom: 8px;">
@@ -93,7 +92,7 @@
 
     <!-- 後處理調整控制板 -->
     <div class="post-panel" id="postPanel">
-      <div style="font-weight: bold; font-size: 13px; color: #007aff; margin-bottom: 6px;">🛠️ 後處理調整（加強版幅度）：</div>
+      <div style="font-weight: bold; font-size: 13px; color: #007aff; margin-bottom: 6px;">🛠️ 後處理調整：</div>
       <div class="slider-row">
         <label>整體旋轉：</label>
         <input type="range" id="rotSlider" min="-360" max="360" value="0">
@@ -117,7 +116,7 @@
       <button class="small" id="btnResetPost" type="button" style="background:#007aff;">重置後處理設定</button>
     </div>
 
-    <!-- 🎯 Debug 監控列：即時步數、總距離、即時步長、航向與點數 -->
+    <!-- Debug 監控列 -->
     <div class="status-bar">
       <div>步數: <strong id="valSteps">0</strong></div>
       <div>距離: <strong id="valDistance" style="color:#007aff;">0.0</strong>m</div>
@@ -299,13 +298,12 @@
         );
       };
 
-      // 🎯 2. Weinberg 動態步長與感應器監聽算法
+      // 2. Weinberg 動態步長演算法
       const STEP_THRESHOLD = 2.2;
       const MIN_STEP_INTERVAL = 280; // ms
-      const WEINBERG_K = 0.45;       // Weinberg 校準常數
+      const WEINBERG_K = 0.45;
       let lastStepTime = 0;
 
-      // 用於採集當前步波峰與波谷的快取
       let currentStepAccMax = -Infinity;
       let currentStepAccMin = Infinity;
 
@@ -324,25 +322,20 @@
         let delta = Math.abs(mag - 9.8);
         let now = Date.now();
 
-        // 動態記錄當前邁步週期內的加速度極值
         if (mag > currentStepAccMax) currentStepAccMax = mag;
         if (mag < currentStepAccMin) currentStepAccMin = mag;
 
-        // 偵測到邁步衝擊波峰，且超過時間鎖間隔
         if (delta > STEP_THRESHOLD && (now - lastStepTime > MIN_STEP_INTERVAL)) {
           lastStepTime = now;
           stepCount++;
 
-          // 🎯 Weinberg 動態步長核心計算公式：StepLength = K * (AccMax - AccMin)^(1/4)
           let deltaAcc = Math.max(0.1, currentStepAccMax - currentStepAccMin);
           let dynamicStepLength = WEINBERG_K * Math.pow(deltaAcc, 0.25);
 
-          // 限制動態步長合理範圍 (0.3m 到 1.0m)
           dynamicStepLength = Math.min(Math.max(dynamicStepLength, 0.30), 1.00);
           lastStepLength = dynamicStepLength;
           totalDistanceMeters += dynamicStepLength;
 
-          // 重置極值快取供下一步使用
           currentStepAccMax = -Infinity;
           currentStepAccMin = Infinity;
 
@@ -385,7 +378,7 @@
           
           setConfigLock(false);
           document.getElementById('postPanel').style.display = 'block';
-          alert('⏹️ PDR 記錄已停止！欄位已解鎖，並開啟後處理調整面板。');
+          alert('⏹️ PDR 記錄已停止！欄位已解鎖。');
           return;
         }
 
@@ -423,7 +416,7 @@
             timestamp: new Date().toISOString() 
           });
           resizeCanvas();
-          alert('🚀 Weinberg 動態步長 PDR 記錄已啟動！系統會自動適應放慢打字時的步伐。');
+          alert('🚀 PDR 記錄已啟動！');
         } catch (err) {
           alert('感應器啟動失敗: ' + err.message);
         }
@@ -508,13 +501,15 @@
         return (180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))));
       }
 
+      // 🎯 放寬瓦片渲染涵蓋半徑 (配合 3 倍放寬的平移與遠景)
       function drawOsmTiles(centerLat, centerLng, zoom, scale, toCanvasX, toCanvasY) {
         let osmZoom = 18;
         let tileX = lon2tile(centerLng, osmZoom);
         let tileY = lat2tile(centerLat, osmZoom);
 
-        for (let dx = -2; dx <= 2; dx++) {
-          for (let dy = -2; dy <= 2; dy++) {
+        // 涵蓋 -3 至 +3 區域 (7x7 瓦片矩陣)
+        for (let dx = -3; dx <= 3; dx++) {
+          for (let dy = -3; dy <= 3; dy++) {
             let tx = tileX + dx;
             let ty = tileY + dy;
             let tileKey = `${osmZoom}_${tx}_${ty}`;
@@ -631,7 +626,7 @@
         ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
       }
 
-      // 手勢平移與縮放
+      // 🎯 手勢平移與縮放 (縮放限制放寬 3 倍: 0.1x 至 15.0x)
       canvas.addEventListener('mousedown', (e) => {
         isDragging = true;
         startMouseX = e.clientX - panX;
@@ -651,7 +646,8 @@
         e.preventDefault();
         if (e.deltaY < 0) zoomFactor *= 1.1;
         else zoomFactor /= 1.1;
-        zoomFactor = Math.min(Math.max(0.3, zoomFactor), 5.0);
+        // 縮放極限放寬 3 倍：0.1 到 15.0
+        zoomFactor = Math.min(Math.max(0.1, zoomFactor), 15.0);
         drawMap();
       }, { passive: false });
 
@@ -681,7 +677,8 @@
           );
           let factor = dist / initialPinchDist;
           zoomFactor *= factor;
-          zoomFactor = Math.min(Math.max(0.3, zoomFactor), 5.0);
+          // 雙指捏合縮放極限放寬 3 倍
+          zoomFactor = Math.min(Math.max(0.1, zoomFactor), 15.0);
           initialPinchDist = dist;
           drawMap();
         }
