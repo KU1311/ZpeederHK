@@ -24,7 +24,6 @@
     button.warning { background: #ff9500; }
     button.small { padding: 6px 10px; font-size: 12px; width: auto; }
     
-    /* 位置選擇按鈕樣式 */
     .pos-btn { background: #e5e5ea; color: #1c1c1e; padding: 10px; font-size: 13px; font-weight: bold; border-radius: 8px; border: 2px solid transparent; cursor: pointer; text-align: center; }
     .pos-btn.active { background: #007aff; color: white; border-color: #0051a8; }
 
@@ -40,7 +39,9 @@
     .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
     .slider-row input[type=range] { flex: 1; }
 
-    .status-bar { display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-top: 6px; }
+    /* 5 欄式 Status Bar 包含動態步長監控 */
+    .status-bar { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1.2fr; gap: 4px; font-size: 11px; color: #666; margin-top: 6px; text-align: center; }
+    .status-bar div { background: #e5e5ea; padding: 4px; border-radius: 4px; }
     
     .store-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
     .store-item { background: #f8f9fa; border: 1px solid #e5e5ea; border-radius: 8px; padding: 10px; margin-bottom: 8px; font-size: 13px; }
@@ -53,7 +54,7 @@
 </head>
 <body>
 
-  <h2>🏬 商場室內軌跡標記工具</h2>
+  <h2>🏬 商場室內軌跡標記工具 (Weinberg 動態步長版)</h2>
 
   <div class="card">
     <div class="grid-2" style="margin-bottom: 8px;">
@@ -67,7 +68,6 @@
       </div>
     </div>
 
-    <!-- 🎯 新增：商場走廊大小選擇 -->
     <div style="margin-bottom: 8px;">
       <label>商場走廊大小 (Offset 距離)：</label>
       <select id="corridorSizeSelect">
@@ -91,37 +91,41 @@
       <canvas id="mapCanvas"></canvas>
     </div>
 
-    <!-- 停止記錄後出現的後處理調整控制板 -->
+    <!-- 後處理調整控制板 -->
     <div class="post-panel" id="postPanel">
-      <div style="font-weight: bold; font-size: 13px; color: #007aff; margin-bottom: 6px;">🛠️ 後處理調整（整體旋轉、縮放與平移）：</div>
+      <div style="font-weight: bold; font-size: 13px; color: #007aff; margin-bottom: 6px;">🛠️ 後處理調整（加強版幅度）：</div>
       <div class="slider-row">
         <label>整體旋轉：</label>
-        <input type="range" id="rotSlider" min="-180" max="180" value="0">
-        <span id="rotValue" style="font-size: 12px; width: 45px; font-weight: bold;">0°</span>
+        <input type="range" id="rotSlider" min="-360" max="360" value="0">
+        <span id="rotValue" style="font-size: 12px; width: 50px; font-weight: bold;">0°</span>
       </div>
       <div class="slider-row">
         <label>整體縮放：</label>
-        <input type="range" id="scaleSlider" min="50" max="200" value="100">
-        <span id="scaleValue" style="font-size: 12px; width: 45px; font-weight: bold;">100%</span>
+        <input type="range" id="scaleSlider" min="20" max="400" value="100">
+        <span id="scaleValue" style="font-size: 12px; width: 50px; font-weight: bold;">100%</span>
       </div>
       <div class="slider-row">
         <label>X軸平移(東西):</label>
-        <input type="range" id="offXSlider" min="-50" max="50" value="0" step="0.5">
-        <span id="offXValue" style="font-size: 12px; width: 45px; font-weight: bold;">0m</span>
+        <input type="range" id="offXSlider" min="-100" max="100" value="0" step="0.5">
+        <span id="offXValue" style="font-size: 12px; width: 50px; font-weight: bold;">0m</span>
       </div>
       <div class="slider-row">
         <label>Y軸平移(南北):</label>
-        <input type="range" id="offYSlider" min="-50" max="50" value="0" step="0.5">
-        <span id="offYValue" style="font-size: 12px; width: 45px; font-weight: bold;">0m</span>
+        <input type="range" id="offYSlider" min="-100" max="100" value="0" step="0.5">
+        <span id="offYValue" style="font-size: 12px; width: 50px; font-weight: bold;">0m</span>
       </div>
       <button class="small" id="btnResetPost" type="button" style="background:#007aff;">重置後處理設定</button>
     </div>
 
+    <!-- 🎯 Debug 監控列：即時步數、總距離、即時步長、航向與點數 -->
     <div class="status-bar">
-      <span>步數: <strong id="valSteps">0</strong></span>
-      <span>航向: <strong id="valHeading">0</strong>°</span>
-      <span>點數: <strong id="valPoints">0</strong></span>
+      <div>步數: <strong id="valSteps">0</strong></div>
+      <div>距離: <strong id="valDistance" style="color:#007aff;">0.0</strong>m</div>
+      <div>即時步長: <strong id="valCurrentStepLen" style="color:#34c759;">0.00</strong>m</div>
+      <div>航向: <strong id="valHeading">0</strong>°</div>
+      <div>點數: <strong id="valPoints">0</strong></div>
     </div>
+    
     <div class="grid-2" style="margin-top: 8px;">
       <button id="btnAddStore" type="button" disabled class="warning">＋ 新增店舖標記</button>
       <button id="btnExportCsv" type="button" class="secondary">📥 匯出 CSV 與 QGIS 雙軌跡(GPX)</button>
@@ -140,13 +144,11 @@
     <div class="modal-content">
       <h3 style="margin-top:0; margin-bottom: 10px;">新增店舖標記</h3>
       
-      <!-- 🎯 變更 1：儲存與取消按鈕放置在最頂部 -->
       <div class="grid-2" style="margin-bottom: 12px;">
         <button id="btnSaveStore" type="button">儲存標記</button>
         <button id="btnCancelStore" type="button" class="danger">取消</button>
       </div>
 
-      <!-- 🎯 變更 2：位置按鈕根據選取的走廊大小動態顯示距離 -->
       <div style="margin-bottom: 12px;">
         <label>店舖相對於當前位置/方向：</label>
         <div class="grid-3" style="margin-top: 4px;">
@@ -188,6 +190,8 @@
       let currentY = 0;
       let currentHeading = 0;
       let stepCount = 0;
+      let totalDistanceMeters = 0;
+      let lastStepLength = 0.65;
       
       let pathHistory = [];
       let stores = [];
@@ -195,7 +199,7 @@
 
       let selectedSide = 'left';
 
-      // 後處理旋轉、縮放與平移參數
+      // 後處理參數
       let postRotationDeg = 0;
       let postScaleRatio = 1.0;
       let postOffsetX = 0;
@@ -295,10 +299,15 @@
         );
       };
 
-      // 2. PDR 行走與感應器監聽
-      const STEP_THRESHOLD = 1.8;
-      const STEP_LENGTH = 0.65;
-      let isPeak = false;
+      // 🎯 2. Weinberg 動態步長與感應器監聽算法
+      const STEP_THRESHOLD = 2.2;
+      const MIN_STEP_INTERVAL = 280; // ms
+      const WEINBERG_K = 0.45;       // Weinberg 校準常數
+      let lastStepTime = 0;
+
+      // 用於採集當前步波峰與波谷的快取
+      let currentStepAccMax = -Infinity;
+      let currentStepAccMin = Infinity;
 
       function handleOrientation(e) {
         if (e.alpha !== null) {
@@ -313,15 +322,37 @@
 
         let mag = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
         let delta = Math.abs(mag - 9.8);
+        let now = Date.now();
 
-        if (delta > STEP_THRESHOLD && !isPeak) {
-          isPeak = true;
+        // 動態記錄當前邁步週期內的加速度極值
+        if (mag > currentStepAccMax) currentStepAccMax = mag;
+        if (mag < currentStepAccMin) currentStepAccMin = mag;
+
+        // 偵測到邁步衝擊波峰，且超過時間鎖間隔
+        if (delta > STEP_THRESHOLD && (now - lastStepTime > MIN_STEP_INTERVAL)) {
+          lastStepTime = now;
           stepCount++;
+
+          // 🎯 Weinberg 動態步長核心計算公式：StepLength = K * (AccMax - AccMin)^(1/4)
+          let deltaAcc = Math.max(0.1, currentStepAccMax - currentStepAccMin);
+          let dynamicStepLength = WEINBERG_K * Math.pow(deltaAcc, 0.25);
+
+          // 限制動態步長合理範圍 (0.3m 到 1.0m)
+          dynamicStepLength = Math.min(Math.max(dynamicStepLength, 0.30), 1.00);
+          lastStepLength = dynamicStepLength;
+          totalDistanceMeters += dynamicStepLength;
+
+          // 重置極值快取供下一步使用
+          currentStepAccMax = -Infinity;
+          currentStepAccMin = Infinity;
+
           document.getElementById('valSteps').innerText = stepCount;
+          document.getElementById('valDistance').innerText = totalDistanceMeters.toFixed(1);
+          document.getElementById('valCurrentStepLen').innerText = dynamicStepLength.toFixed(2);
 
           let rad = (currentHeading * Math.PI) / 180;
-          currentX += STEP_LENGTH * Math.sin(rad);
-          currentY += STEP_LENGTH * Math.cos(rad);
+          currentX += dynamicStepLength * Math.sin(rad);
+          currentY += dynamicStepLength * Math.cos(rad);
 
           pathHistory.push({
             floor: getCurrentFloor(),
@@ -332,12 +363,9 @@
 
           document.getElementById('valPoints').innerText = pathHistory.filter(p => p.floor === getCurrentFloor()).length;
           drawMap();
-        } else if (delta < STEP_THRESHOLD) {
-          isPeak = false;
         }
       }
 
-      // 🎯 開啟/停止鎖定欄位邏輯
       function setConfigLock(locked) {
         document.getElementById('mallName').disabled = locked;
         document.getElementById('floorInput').disabled = locked;
@@ -355,9 +383,7 @@
           btn.innerText = '2. 開始 PDR 行走';
           btn.className = 'secondary';
           
-          // 解鎖欄位
           setConfigLock(false);
-
           document.getElementById('postPanel').style.display = 'block';
           alert('⏹️ PDR 記錄已停止！欄位已解鎖，並開啟後處理調整面板。');
           return;
@@ -380,7 +406,6 @@
           isPdrRunning = true;
           startTimestampStr = generateTimestamp();
 
-          // 🎯 開始記錄後鎖定設定欄位
           setConfigLock(true);
 
           showOsmMap = false;
@@ -398,7 +423,7 @@
             timestamp: new Date().toISOString() 
           });
           resizeCanvas();
-          alert('🚀 PDR 記錄已啟動！設定欄位已鎖定。');
+          alert('🚀 Weinberg 動態步長 PDR 記錄已啟動！系統會自動適應放慢打字時的步伐。');
         } catch (err) {
           alert('感應器啟動失敗: ' + err.message);
         }
@@ -723,7 +748,7 @@
           rawY: capturedPos ? capturedPos.y : currentY,
           heading: capturedPos ? capturedPos.heading : currentHeading,
           side: selectedSide,
-          offsetDist: getCorridorOffsetDist(), // 動態記錄走廊 offset 距離
+          offsetDist: getCorridorOffsetDist(),
           finalX: 0,
           finalY: 0
         };
@@ -736,7 +761,6 @@
         renderStoreList();
       };
 
-      // 🎯 向量數學公式：支援動態走廊距離 (2m 或 4m)
       function calculateOffsetPos(store) {
         let sideHeading = store.heading;
         let offsetDist = store.offsetDist || 2.0;
