@@ -15,9 +15,10 @@
     
     label { font-size: 12px; color: #666; font-weight: bold; display: block; margin-bottom: 4px; }
     input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; background: #fff; }
+    input:disabled, select:disabled { background: #e5e5ea; color: #8e8e93; }
     
     button { width: 100%; padding: 12px; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; background: #007aff; color: white; cursor: pointer; }
-    button:disabled { background: #b0b0b8; opacity: 0.6; }
+    button:disabled { background: #b0b0b8; opacity: 0.6; cursor: not-allowed; }
     button.secondary { background: #34c759; }
     button.danger { background: #ff3b30; }
     button.warning { background: #ff9500; }
@@ -66,6 +67,15 @@
       </div>
     </div>
 
+    <!-- 🎯 新增：商場走廊大小選擇 -->
+    <div style="margin-bottom: 8px;">
+      <label>商場走廊大小 (Offset 距離)：</label>
+      <select id="corridorSizeSelect">
+        <option value="2" selected>🚶 小型通道 (2m)</option>
+        <option value="4">🏃 大型通道 (4m)</option>
+      </select>
+    </div>
+
     <div class="grid-2">
       <button id="btnGps" type="button">1. 抓取 GPS 起點</button>
       <button id="btnStartPdr" type="button" class="secondary">2. 開始 PDR 行走</button>
@@ -83,18 +93,28 @@
 
     <!-- 停止記錄後出現的後處理調整控制板 -->
     <div class="post-panel" id="postPanel">
-      <div style="font-weight: bold; font-size: 13px; color: #007aff; margin-bottom: 6px;">🛠️ 後處理調整（整體軌跡與店舖）：</div>
+      <div style="font-weight: bold; font-size: 13px; color: #007aff; margin-bottom: 6px;">🛠️ 後處理調整（整體旋轉、縮放與平移）：</div>
       <div class="slider-row">
         <label>整體旋轉：</label>
         <input type="range" id="rotSlider" min="-180" max="180" value="0">
-        <span id="rotValue" style="font-size: 12px; width: 40px; font-weight: bold;">0°</span>
+        <span id="rotValue" style="font-size: 12px; width: 45px; font-weight: bold;">0°</span>
       </div>
       <div class="slider-row">
         <label>整體縮放：</label>
         <input type="range" id="scaleSlider" min="50" max="200" value="100">
-        <span id="scaleValue" style="font-size: 12px; width: 40px; font-weight: bold;">100%</span>
+        <span id="scaleValue" style="font-size: 12px; width: 45px; font-weight: bold;">100%</span>
       </div>
-      <button class="small" id="btnResetPost" type="button" style="background:#007aff;">重置旋轉縮放</button>
+      <div class="slider-row">
+        <label>X軸平移(東西):</label>
+        <input type="range" id="offXSlider" min="-50" max="50" value="0" step="0.5">
+        <span id="offXValue" style="font-size: 12px; width: 45px; font-weight: bold;">0m</span>
+      </div>
+      <div class="slider-row">
+        <label>Y軸平移(南北):</label>
+        <input type="range" id="offYSlider" min="-50" max="50" value="0" step="0.5">
+        <span id="offYValue" style="font-size: 12px; width: 45px; font-weight: bold;">0m</span>
+      </div>
+      <button class="small" id="btnResetPost" type="button" style="background:#007aff;">重置後處理設定</button>
     </div>
 
     <div class="status-bar">
@@ -120,13 +140,19 @@
     <div class="modal-content">
       <h3 style="margin-top:0; margin-bottom: 10px;">新增店舖標記</h3>
       
-      <!-- 🎯 3 個位置選擇按鈕 (預設選擇 左 2m，前改為 2m 延伸) -->
+      <!-- 🎯 變更 1：儲存與取消按鈕放置在最頂部 -->
+      <div class="grid-2" style="margin-bottom: 12px;">
+        <button id="btnSaveStore" type="button">儲存標記</button>
+        <button id="btnCancelStore" type="button" class="danger">取消</button>
+      </div>
+
+      <!-- 🎯 變更 2：位置按鈕根據選取的走廊大小動態顯示距離 -->
       <div style="margin-bottom: 12px;">
         <label>店舖相對於當前位置/方向：</label>
         <div class="grid-3" style="margin-top: 4px;">
-          <button type="button" class="pos-btn active" id="btnSideLeft" onclick="selectSide('left')">👈 左 (2m)</button>
-          <button type="button" class="pos-btn" id="btnSideCenter" onclick="selectSide('front')">🎯 前 (2m)</button>
-          <button type="button" class="pos-btn" id="btnSideRight" onclick="selectSide('right')">👉 右 (2m)</button>
+          <button type="button" class="pos-btn active" id="btnSideLeft" onclick="selectSide('left')">👈 左</button>
+          <button type="button" class="pos-btn" id="btnSideCenter" onclick="selectSide('front')">🎯 前</button>
+          <button type="button" class="pos-btn" id="btnSideRight" onclick="selectSide('right')">👉 右</button>
         </div>
       </div>
 
@@ -146,11 +172,6 @@
         <div>
           <label>備註 (Remark)</label>
           <input type="text" id="inputRemark" placeholder="例: 近扶手梯">
-        </div>
-
-        <div class="grid-2" style="margin-top: 10px;">
-          <button id="btnSaveStore" type="button">儲存標記</button>
-          <button id="btnCancelStore" type="button" class="danger">取消</button>
         </div>
       </div>
     </div>
@@ -172,12 +193,13 @@
       let stores = [];
       let capturedPos = null;
 
-      // 🎯 當前 Modal 選擇的位置 (預設 left)
       let selectedSide = 'left';
 
-      // 後處理旋轉與縮放參數
+      // 後處理旋轉、縮放與平移參數
       let postRotationDeg = 0;
       let postScaleRatio = 1.0;
+      let postOffsetX = 0;
+      let postOffsetY = 0;
 
       const tileCache = {};
 
@@ -194,6 +216,10 @@
       function getCurrentFloor() {
         let f = document.getElementById('floorInput').value.trim();
         return f ? f : 'G';
+      }
+
+      function getCorridorOffsetDist() {
+        return parseFloat(document.getElementById('corridorSizeSelect').value) || 2.0;
       }
 
       function resizeCanvas() {
@@ -311,6 +337,14 @@
         }
       }
 
+      // 🎯 開啟/停止鎖定欄位邏輯
+      function setConfigLock(locked) {
+        document.getElementById('mallName').disabled = locked;
+        document.getElementById('floorInput').disabled = locked;
+        document.getElementById('corridorSizeSelect').disabled = locked;
+        document.getElementById('btnGps').disabled = locked;
+      }
+
       document.getElementById('btnStartPdr').onclick = async function() {
         const btn = document.getElementById('btnStartPdr');
 
@@ -321,8 +355,11 @@
           btn.innerText = '2. 開始 PDR 行走';
           btn.className = 'secondary';
           
+          // 解鎖欄位
+          setConfigLock(false);
+
           document.getElementById('postPanel').style.display = 'block';
-          alert('⏹️ PDR 記錄已停止！已開啟後處理旋轉與縮放面板。');
+          alert('⏹️ PDR 記錄已停止！欄位已解鎖，並開啟後處理調整面板。');
           return;
         }
 
@@ -343,6 +380,9 @@
           isPdrRunning = true;
           startTimestampStr = generateTimestamp();
 
+          // 🎯 開始記錄後鎖定設定欄位
+          setConfigLock(true);
+
           showOsmMap = false;
           btnToggleOsm.innerText = '🗺️ 開啟底圖';
           document.getElementById('postPanel').style.display = 'none';
@@ -358,7 +398,7 @@
             timestamp: new Date().toISOString() 
           });
           resizeCanvas();
-          alert('🚀 PDR 記錄已啟動！請開始行走。');
+          alert('🚀 PDR 記錄已啟動！設定欄位已鎖定。');
         } catch (err) {
           alert('感應器啟動失敗: ' + err.message);
         }
@@ -374,13 +414,19 @@
         let scaledX = x * postScaleRatio;
         let scaledY = y * postScaleRatio;
 
-        let tx = scaledX * Math.cos(rad) - scaledY * Math.sin(rad);
-        let ty = scaledX * Math.sin(rad) + scaledY * Math.cos(rad);
-        return { x: tx, y: ty };
+        let rx = scaledX * Math.cos(rad) - scaledY * Math.sin(rad);
+        let ry = scaledX * Math.sin(rad) + scaledY * Math.cos(rad);
+
+        return { 
+          x: rx + postOffsetX, 
+          y: ry + postOffsetY 
+        };
       }
 
       const rotSlider = document.getElementById('rotSlider');
       const scaleSlider = document.getElementById('scaleSlider');
+      const offXSlider = document.getElementById('offXSlider');
+      const offYSlider = document.getElementById('offYSlider');
 
       rotSlider.oninput = function() {
         postRotationDeg = parseFloat(this.value);
@@ -396,18 +442,39 @@
         renderStoreList();
       };
 
-      document.getElementById('btnResetPost').onclick = function() {
-        rotSlider.value = 0;
-        scaleSlider.value = 100;
-        postRotationDeg = 0;
-        postScaleRatio = 1.0;
-        document.getElementById('rotValue').innerText = '0°';
-        document.getElementById('scaleValue').innerText = '100%';
+      offXSlider.oninput = function() {
+        postOffsetX = parseFloat(this.value);
+        document.getElementById('offXValue').innerText = postOffsetX + 'm';
         drawMap();
         renderStoreList();
       };
 
-      // OSM 地圖繪製
+      offYSlider.oninput = function() {
+        postOffsetY = parseFloat(this.value);
+        document.getElementById('offYValue').innerText = postOffsetY + 'm';
+        drawMap();
+        renderStoreList();
+      };
+
+      document.getElementById('btnResetPost').onclick = function() {
+        rotSlider.value = 0;
+        scaleSlider.value = 100;
+        offXSlider.value = 0;
+        offYSlider.value = 0;
+
+        postRotationDeg = 0;
+        postScaleRatio = 1.0;
+        postOffsetX = 0;
+        postOffsetY = 0;
+
+        document.getElementById('rotValue').innerText = '0°';
+        document.getElementById('scaleValue').innerText = '100%';
+        document.getElementById('offXValue').innerText = '0m';
+        document.getElementById('offYValue').innerText = '0m';
+        drawMap();
+        renderStoreList();
+      };
+
       function lon2tile(lon, zoom) { return Math.floor((lon + 180) / 360 * Math.pow(2, zoom)); }
       function lat2tile(lat, zoom) { return Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom)); }
       function tile2lon(x, z) { return (x / Math.pow(2, z) * 360 - 180); }
@@ -421,8 +488,8 @@
         let tileX = lon2tile(centerLng, osmZoom);
         let tileY = lat2tile(centerLat, osmZoom);
 
-        for (let dx = -1; dx <= 1; dx++) {
-          for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          for (let dy = -2; dy <= 2; dy++) {
             let tx = tileX + dx;
             let ty = tileY + dy;
             let tileKey = `${osmZoom}_${tx}_${ty}`;
@@ -600,12 +667,16 @@
         initialPinchDist = null;
       });
 
-      // 🎯 位置按鈕點擊切換邏輯
       window.selectSide = function(side) {
         selectedSide = side;
+        let dist = getCorridorOffsetDist();
         document.getElementById('btnSideLeft').className = 'pos-btn' + (side === 'left' ? ' active' : '');
         document.getElementById('btnSideCenter').className = 'pos-btn' + (side === 'front' ? ' active' : '');
         document.getElementById('btnSideRight').className = 'pos-btn' + (side === 'right' ? ' active' : '');
+
+        document.getElementById('btnSideLeft').innerText = `👈 左 (${dist}m)`;
+        document.getElementById('btnSideCenter').innerText = `🎯 前 (${dist}m)`;
+        document.getElementById('btnSideRight').innerText = `👉 右 (${dist}m)`;
       };
 
       // 4. 店舖標記 Modal
@@ -652,6 +723,7 @@
           rawY: capturedPos ? capturedPos.y : currentY,
           heading: capturedPos ? capturedPos.heading : currentHeading,
           side: selectedSide,
+          offsetDist: getCorridorOffsetDist(), // 動態記錄走廊 offset 距離
           finalX: 0,
           finalY: 0
         };
@@ -664,14 +736,14 @@
         renderStoreList();
       };
 
-      // 🎯 向量數學公式：支援「左 2m」、「前 2m」、「右 2m」計算
+      // 🎯 向量數學公式：支援動態走廊距離 (2m 或 4m)
       function calculateOffsetPos(store) {
         let sideHeading = store.heading;
-        let offsetDist = 2.0; // 固定距離 2 米
+        let offsetDist = store.offsetDist || 2.0;
 
         if (store.side === 'left') sideHeading = store.heading - 90;
         if (store.side === 'right') sideHeading = store.heading + 90;
-        if (store.side === 'front') sideHeading = store.heading; // 正前方延伸
+        if (store.side === 'front') sideHeading = store.heading;
 
         let rad = (sideHeading * Math.PI) / 180.0;
         store.finalX = store.rawX + offsetDist * Math.sin(rad);
@@ -695,7 +767,7 @@
           div.innerHTML = `
             <header>
               <span>[${s.floor}] ${s.shopNo} - ${s.nameCn} (${s.nameEn})</span>
-              <span style="color:#007aff;">${s.side.toUpperCase()} (2m)</span>
+              <span style="color:#007aff;">${s.side.toUpperCase()} (${s.offsetDist}m)</span>
             </header>
             <div><strong>備註:</strong> ${s.remark || '無'}</div>
             <div style="font-size:11px; color:#8e8e93; margin-top:2px;">
@@ -740,6 +812,7 @@
             'Name_EN',
             'Remark',
             'Side_Offset',
+            'Offset_Dist_m',
             'GPS_Start_Lat',
             'GPS_Start_Lng',
             'Raw_Final_X_m',
@@ -766,6 +839,7 @@
               `"${s.nameEn}"`,
               `"${s.remark}"`,
               `"${s.side}"`,
+              s.offsetDist || 2.0,
               startGps.lat || '',
               startGps.lng || '',
               s.finalX.toFixed(3),
