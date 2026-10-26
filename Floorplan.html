@@ -42,13 +42,14 @@
     .status-bar { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1.2fr; gap: 4px; font-size: 11px; color: #666; margin-top: 6px; text-align: center; }
     .status-bar div { background: #e5e5ea; padding: 4px; border-radius: 4px; }
     
-    .store-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
-    .store-item { background: #f8f9fa; border: 1px solid #e5e5ea; border-radius: 8px; padding: 10px; margin-bottom: 8px; font-size: 13px; }
+    .store-list { max-height: 220px; overflow-y: auto; margin-top: 8px; }
+    .store-item { background: #f8f9fa; border: 1px solid #e5e5ea; border-radius: 8px; padding: 10px; margin-bottom: 8px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
+    .store-item:active { background: #e5e5ea; }
     .store-item header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 4px; }
 
     /* Modal */
     .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999; justify-content: center; align-items: center; }
-    .modal-content { background: white; border-radius: 12px; padding: 16px; width: 90%; max-width: 400px; }
+    .modal-content { background: white; border-radius: 12px; padding: 16px; width: 90%; max-width: 400px; max-height: 90vh; overflow-y: auto; }
   </style>
 </head>
 <body>
@@ -132,7 +133,7 @@
   </div>
 
   <div class="card">
-    <label>已記錄商舖清單 (<span id="storeCount">0</span>)</label>
+    <label>已記錄商舖清單 (點擊可修改詳細資料) (<span id="storeCount">0</span>)</label>
     <div class="store-list" id="storeListContainer">
       <div style="text-align: center; color: #999; padding: 15px;">暫無店舖記錄</div>
     </div>
@@ -141,14 +142,16 @@
   <!-- 店舖資料 Modal -->
   <div class="modal" id="storeModal">
     <div class="modal-content">
-      <h3 style="margin-top:0; margin-bottom: 10px;">新增店舖標記</h3>
+      <h3 style="margin-top:0; margin-bottom: 10px;" id="modalTitle">新增店舖標記</h3>
       
-      <div class="grid-2" style="margin-bottom: 12px;">
-        <button id="btnSaveStore" type="button">儲存標記</button>
-        <button id="btnCancelStore" type="button" class="danger">取消</button>
+      <!-- 頂部控制按鈕：儲存、取消與刪除 -->
+      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <button id="btnSaveStore" type="button" style="flex:1;">儲存標記</button>
+        <button id="btnDeleteStore" type="button" class="danger" style="flex:1; display:none;">🗑️ 刪除標記</button>
+        <button id="btnCancelStore" type="button" class="danger" style="flex:1; background:#8e8e93;">取消</button>
       </div>
 
-      <div style="margin-bottom: 12px;">
+      <div style="margin-bottom: 12px;" id="posBtnContainer">
         <label>店舖相對於當前位置/方向：</label>
         <div class="grid-3" style="margin-top: 4px;">
           <button type="button" class="pos-btn active" id="btnSideLeft" onclick="selectSide('left')">👈 左</button>
@@ -159,6 +162,10 @@
 
       <div style="display:flex; flex-direction:column; gap:8px;">
         <div>
+          <label>鋪號 (Shop No.) <span style="color:#007aff;">(第一圈快速填寫)</span></label>
+          <input type="text" id="inputShopNo" placeholder="例: L1-01">
+        </div>
+        <div>
           <label>中文名稱</label>
           <input type="text" id="inputNameCn" placeholder="例: 喜茶">
         </div>
@@ -166,10 +173,40 @@
           <label>英文名稱</label>
           <input type="text" id="inputNameEn" placeholder="例: HEYTEA">
         </div>
+
+        <!-- 🎯 新增：店鋪類別 (Category) -->
         <div>
-          <label>鋪號 (Shop No.)</label>
-          <input type="text" id="inputShopNo" placeholder="例: L1-01">
+          <label>店鋪類別</label>
+          <select id="selectCategory">
+            <option value="">-- 請選擇類別 (留空) --</option>
+            <option value="購物">購物</option>
+            <option value="餐廳">餐廳</option>
+            <option value="交通運輸">交通運輸</option>
+            <option value="美容及個人服務">美容及個人服務</option>
+            <option value="銀行及金融服務">銀行及金融服務</option>
+            <option value="旅遊">旅遊</option>
+            <option value="通訊">通訊</option>
+            <option value="其他">其他</option>
+          </select>
         </div>
+
+        <!-- 🎯 新增：購物子類別 (Sub-Category) (僅在主類別為「購物」時展開) -->
+        <div id="subCategoryGroup" style="display: none;">
+          <label>購物子類別</label>
+          <select id="selectSubCategory">
+            <option value="">-- 請選擇子類別 (留空) --</option>
+            <option value="食品、超市與日用品">食品、超市與日用品</option>
+            <option value="時裝、鞋包與飾品">時裝、鞋包與飾品</option>
+            <option value="美妝、母嬰與個人護理">美妝、母嬰與個人護理</option>
+            <option value="專門興趣、文化與休閒">專門興趣、文化與休閒</option>
+            <option value="運動、戶外與寵物/水族">運動、戶外與寵物/水族</option>
+            <option value="電器、電子與視聽">電器、電子與視聽</option>
+            <option value="家居、生活用品與修繕">家居、生活用品與修繕</option>
+            <option value="車輛及零件銷售">車輛及零件銷售</option>
+            <option value="其他">其他</option>
+          </select>
+        </div>
+
         <div>
           <label>備註 (Remark)</label>
           <input type="text" id="inputRemark" placeholder="例: 近扶手梯">
@@ -195,6 +232,7 @@
       let pathHistory = [];
       let stores = [];
       let capturedPos = null;
+      let editingStoreId = null;
 
       let selectedSide = 'left';
 
@@ -215,6 +253,20 @@
 
       const canvas = document.getElementById('mapCanvas');
       const ctx = canvas ? canvas.getContext('2d') : null;
+
+      const selectCategory = document.getElementById('selectCategory');
+      const selectSubCategory = document.getElementById('selectSubCategory');
+      const subCategoryGroup = document.getElementById('subCategoryGroup');
+
+      // 🎯 主類別連動子類別邏輯
+      selectCategory.onchange = function() {
+        if (this.value === '購物') {
+          subCategoryGroup.style.display = 'block';
+        } else {
+          subCategoryGroup.style.display = 'none';
+          selectSubCategory.value = ''; // 切換至其他類別時自動重置子類別
+        }
+      };
 
       function getCurrentFloor() {
         let f = document.getElementById('floorInput').value.trim();
@@ -300,7 +352,7 @@
 
       // 2. Weinberg 動態步長演算法
       const STEP_THRESHOLD = 2.2;
-      const MIN_STEP_INTERVAL = 280; // ms
+      const MIN_STEP_INTERVAL = 280;
       const WEINBERG_K = 0.45;
       let lastStepTime = 0;
 
@@ -501,15 +553,13 @@
         return (180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))));
       }
 
-      // 🎯 瓦片緩衝區擴展至 11x11（dx, dy 從 -5 到 5），防大幅拉遠視角時周圍留白
       function drawOsmTiles(centerLat, centerLng, zoom, scale, toCanvasX, toCanvasY) {
         let osmZoom = 18;
         let tileX = lon2tile(centerLng, osmZoom);
         let tileY = lat2tile(centerLat, osmZoom);
 
-        // 涵蓋 -5 至 +5 區域 (11x11 瓦片矩陣)
-        for (let dx = -5; dx <= 5; dx++) {
-          for (let dy = -5; dy <= 5; dy++) {
+        for (let dx = -3; dx <= 3; dx++) {
+          for (let dy = -3; dy <= 3; dy++) {
             let tx = tileX + dx;
             let ty = tileY + dy;
             let tileKey = `${osmZoom}_${tx}_${ty}`;
@@ -626,7 +676,7 @@
         ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
       }
 
-      // 🎯 超大範圍縮放支援：最小縮放放寬至 0.01（可拉遠看清大型商場全貌）
+      // 手勢平移與縮放
       canvas.addEventListener('mousedown', (e) => {
         isDragging = true;
         startMouseX = e.clientX - panX;
@@ -646,8 +696,7 @@
         e.preventDefault();
         if (e.deltaY < 0) zoomFactor *= 1.1;
         else zoomFactor /= 1.1;
-        // 放寬 zoomFactor 下限至 0.01
-        zoomFactor = Math.min(Math.max(0.01, zoomFactor), 15.0);
+        zoomFactor = Math.min(Math.max(0.1, zoomFactor), 15.0);
         drawMap();
       }, { passive: false });
 
@@ -677,8 +726,7 @@
           );
           let factor = dist / initialPinchDist;
           zoomFactor *= factor;
-          // 雙指手勢放寬 zoomFactor 下限至 0.01
-          zoomFactor = Math.min(Math.max(0.01, zoomFactor), 15.0);
+          zoomFactor = Math.min(Math.max(0.1, zoomFactor), 15.0);
           initialPinchDist = dist;
           drawMap();
         }
@@ -703,8 +751,10 @@
 
       // 4. 店舖標記 Modal
       const modal = document.getElementById('storeModal');
+      const btnDeleteStore = document.getElementById('btnDeleteStore');
       
       document.getElementById('btnAddStore').onclick = function() {
+        editingStoreId = null;
         capturedPos = {
           x: currentX,
           y: currentY,
@@ -712,12 +762,56 @@
         };
 
         selectSide('left');
+        document.getElementById('modalTitle').innerText = '新增店舖標記';
+        document.getElementById('posBtnContainer').style.display = 'block';
+        btnDeleteStore.style.display = 'none';
 
+        document.getElementById('inputShopNo').value = '';
         document.getElementById('inputNameCn').value = '';
         document.getElementById('inputNameEn').value = '';
-        document.getElementById('inputShopNo').value = '';
+        selectCategory.value = '';
+        selectSubCategory.value = '';
+        subCategoryGroup.style.display = 'none';
         document.getElementById('inputRemark').value = '';
         modal.style.display = 'flex';
+      };
+
+      // 點擊編輯店舖
+      window.editStore = function(storeId) {
+        let store = stores.find(s => s.id === storeId);
+        if (!store) return;
+
+        editingStoreId = storeId;
+        document.getElementById('modalTitle').innerText = `編輯店舖 [${store.shopNo || '未命名'}]`;
+        document.getElementById('posBtnContainer').style.display = 'none';
+        btnDeleteStore.style.display = 'block';
+
+        document.getElementById('inputShopNo').value = store.shopNo || '';
+        document.getElementById('inputNameCn').value = store.nameCn || '';
+        document.getElementById('inputNameEn').value = store.nameEn || '';
+        
+        selectCategory.value = store.category || '';
+        if (store.category === '購物') {
+          subCategoryGroup.style.display = 'block';
+          selectSubCategory.value = store.subCategory || '';
+        } else {
+          subCategoryGroup.style.display = 'none';
+          selectSubCategory.value = '';
+        }
+
+        document.getElementById('inputRemark').value = store.remark || '';
+        modal.style.display = 'flex';
+      };
+
+      // 刪除標記邏輯
+      btnDeleteStore.onclick = function() {
+        if (!editingStoreId) return;
+        if (confirm('⚠️ 確定要刪除這個店舖標記嗎？')) {
+          stores = stores.filter(s => s.id !== editingStoreId);
+          modal.style.display = 'none';
+          drawMap();
+          renderStoreList();
+        }
       };
 
       document.getElementById('btnCancelStore').onclick = function() { modal.style.display = 'none'; };
@@ -726,32 +820,48 @@
         let nameCn = document.getElementById('inputNameCn').value.trim();
         let nameEn = document.getElementById('inputNameEn').value.trim();
         let shopNo = document.getElementById('inputShopNo').value.trim();
+        let category = selectCategory.value;
+        let subCategory = (category === '購物') ? selectSubCategory.value : '';
         let remark = document.getElementById('inputRemark').value.trim();
 
         if (!nameCn && !nameEn && !shopNo) {
-          alert('請至少輸入名稱或鋪號！');
+          alert('請至少輸入鋪號或店名！');
           return;
         }
 
-        let storeObj = {
-          id: 'store_' + Date.now(),
-          mall: document.getElementById('mallName').value,
-          floor: getCurrentFloor(),
-          nameCn: nameCn,
-          nameEn: nameEn,
-          shopNo: shopNo,
-          remark: remark,
-          rawX: capturedPos ? capturedPos.x : currentX,
-          rawY: capturedPos ? capturedPos.y : currentY,
-          heading: capturedPos ? capturedPos.heading : currentHeading,
-          side: selectedSide,
-          offsetDist: getCorridorOffsetDist(),
-          finalX: 0,
-          finalY: 0
-        };
+        if (editingStoreId) {
+          let store = stores.find(s => s.id === editingStoreId);
+          if (store) {
+            store.shopNo = shopNo;
+            store.nameCn = nameCn;
+            store.nameEn = nameEn;
+            store.category = category;
+            store.subCategory = subCategory;
+            store.remark = remark;
+          }
+        } else {
+          let storeObj = {
+            id: 'store_' + Date.now(),
+            mall: document.getElementById('mallName').value,
+            floor: getCurrentFloor(),
+            nameCn: nameCn,
+            nameEn: nameEn,
+            shopNo: shopNo,
+            category: category,
+            subCategory: subCategory,
+            remark: remark,
+            rawX: capturedPos ? capturedPos.x : currentX,
+            rawY: capturedPos ? capturedPos.y : currentY,
+            heading: capturedPos ? capturedPos.heading : currentHeading,
+            side: selectedSide,
+            offsetDist: getCorridorOffsetDist(),
+            finalX: 0,
+            finalY: 0
+          };
 
-        calculateOffsetPos(storeObj);
-        stores.push(storeObj);
+          calculateOffsetPos(storeObj);
+          stores.push(storeObj);
+        }
 
         modal.style.display = 'none';
         drawMap();
@@ -785,15 +895,19 @@
           let adjusted = transformPoint(s.finalX, s.finalY);
           let div = document.createElement('div');
           div.className = 'store-item';
+          div.onclick = function() { editStore(s.id); };
+          
+          let catText = s.category ? (s.subCategory ? `${s.category} > ${s.subCategory}` : s.category) : '未分類';
+
           div.innerHTML = `
             <header>
-              <span>[${s.floor}] ${s.shopNo} - ${s.nameCn} (${s.nameEn})</span>
+              <span>[${s.floor}] ${s.shopNo} - ${s.nameCn} (${s.nameEn}) ✏️</span>
               <span style="color:#007aff;">${s.side.toUpperCase()} (${s.offsetDist}m)</span>
             </header>
+            <div><strong>類別:</strong> <span style="color:#ff9500;">${catText}</span></div>
             <div><strong>備註:</strong> ${s.remark || '無'}</div>
             <div style="font-size:11px; color:#8e8e93; margin-top:2px;">
-              原始微調點 (Raw Final): (${s.finalX.toFixed(2)}m, ${s.finalY.toFixed(2)}m)<br>
-              <strong>調整後點 (Adjusted): (${adjusted.x.toFixed(2)}m, ${adjusted.y.toFixed(2)}m)</strong>
+              調整後點 (Adjusted): (${adjusted.x.toFixed(2)}m, ${adjusted.y.toFixed(2)}m)
             </div>
           `;
           container.appendChild(div);
@@ -831,6 +945,8 @@
             'Shop_No',
             'Name_CN',
             'Name_EN',
+            'Category',
+            'Sub_Category',
             'Remark',
             'Side_Offset',
             'Offset_Dist_m',
@@ -858,6 +974,8 @@
               `"${s.shopNo}"`,
               `"${s.nameCn}"`,
               `"${s.nameEn}"`,
+              `"${s.category || ''}"`,
+              `"${s.subCategory || ''}"`,
               `"${s.remark}"`,
               `"${s.side}"`,
               s.offsetDist || 2.0,
