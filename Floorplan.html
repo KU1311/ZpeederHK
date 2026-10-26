@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>商場室內 PDR 軌跡標記工具</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { margin: 0; padding: 12px; background: #f2f2f7; color: #1c1c1e; }
+    h2 { margin: 0 0 10px 0; font-size: 18px; text-align: center; }
+    
+    .card { background: white; border-radius: 12px; padding: 12px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+    
+    label { font-size: 12px; color: #666; font-weight: bold; display: block; margin-bottom: 4px; }
+    input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; background: #fff; }
+    input:disabled, select:disabled { background: #e5e5ea; color: #8e8e93; }
+    
+    button { width: 100%; padding: 12px; font-size: 14px; font-weight: 600; border: none; border-radius: 8px; background: #007aff; color: white; cursor: pointer; }
+    button:disabled { background: #b0b0b8; opacity: 0.6; cursor: not-allowed; }
+    button.secondary { background: #34c759; }
+    button.danger { background: #ff3b30; }
+    button.warning { background: #ff9500; }
+    button.small { padding: 6px 10px; font-size: 12px; width: auto; }
+    
+    .pos-btn { background: #e5e5ea; color: #1c1c1e; padding: 10px; font-size: 13px; font-weight: bold; border-radius: 8px; border: 2px solid transparent; cursor: pointer; text-align: center; }
+    .pos-btn.active { background: #007aff; color: white; border-color: #0051a8; }
+
+    #canvas-container { width: 100%; height: 320px; background: #1c1c1e; border-radius: 12px; position: relative; overflow: hidden; touch-action: none; }
+    canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+    canvas:active { cursor: grabbing; }
+
+    .control-btn-group { position: absolute; top: 10px; right: 10px; z-index: 10; display: flex; gap: 6px; }
+    .overlay-btn { background: rgba(0, 122, 255, 0.85); color: white; padding: 6px 12px; font-size: 12px; border-radius: 20px; border: none; font-weight: bold; backdrop-filter: blur(4px); cursor: pointer; }
+    
+    .post-panel { display: none; background: #eef6ff; border: 1px solid #007aff; border-radius: 8px; padding: 10px; margin-top: 8px; }
+    .post-panel label { color: #007aff; font-size: 12px; }
+    .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .slider-row input[type=range] { flex: 1; }
+
+    .status-bar { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1.2fr; gap: 4px; font-size: 11px; color: #666; margin-top: 6px; text-align: center; }
+    .status-bar div { background: #e5e5ea; padding: 4px; border-radius: 4px; }
+    
+    .store-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
+    .store-item { background: #f8f9fa; border: 1px solid #e5e5ea; border-radius: 8px; padding: 10px; margin-bottom: 8px; font-size: 13px; }
+    .store-item header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 4px; }
+
+    /* Modal */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999; justify-content: center; align-items: center; }
+    .modal-content { background: white; border-radius: 12px; padding: 16px; width: 90%; max-width: 400px; }
+  </style>
+</head>
+<body>
+
+  <h2>🏬 商場室內軌跡標記工具</h2>
+
+  <div class="card">
+    <div class="grid-2" style="margin-bottom: 8px;">
+      <div>
+        <label>商場名稱 <span style="color:red;">*</span></label>
+        <input type="text" id="mallName" placeholder="請先輸入商場名稱">
+      </div>
+      <div>
+        <label>當前樓層 (手動輸入)</label>
+        <input type="text" id="floorInput" value="G" placeholder="例: G, L1, B2">
+      </div>
+    </div>
+
+    <div style="margin-bottom: 8px;">
+      <label>商場走廊大小 (Offset 距離)：</label>
+      <select id="corridorSizeSelect">
+        <option value="2" selected>🚶 小型通道 (2m)</option>
+        <option value="4">🏃 大型通道 (4m)</option>
+      </select>
+    </div>
+
+    <div class="grid-2">
+      <button id="btnGps" type="button">1. 抓取 GPS 起點</button>
+      <button id="btnStartPdr" type="button" class="secondary">2. 開始 PDR 行走</button>
+    </div>
+  </div>
+
+  <div class="card" style="padding: 8px;">
+    <div id="canvas-container">
+      <div class="control-btn-group">
+        <button class="overlay-btn" id="btnToggleOsm" type="button">🗺️ 關閉底圖</button>
+        <button class="overlay-btn" id="btnResetView" type="button">🎯 重置視角</button>
+      </div>
+      <canvas id="mapCanvas"></canvas>
+    </div>
+
+    <!-- 後處理調整控制板 -->
+    <div class="post-panel" id="postPanel">
+      <div style="font-weight: bold; font-size: 13px; color: #007aff; margin-bottom: 6px;">🛠️ 後處理調整：</div>
+      <div class="slider-row">
+        <label>整體旋轉：</label>
+        <input type="range" id="rotSlider" min="-360" max="360" value="0">
+        <span id="rotValue" style="font-size: 12px; width: 50px; font-weight: bold;">0°</span>
+      </div>
+      <div class="slider-row">
+        <label>整體縮放：</label>
+        <input type="range" id="scaleSlider" min="20" max="400" value="100">
+        <span id="scaleValue" style="font-size: 12px; width: 50px; font-weight: bold;">100%</span>
+      </div>
+      <div class="slider-row">
+        <label>X軸平移(東西):</label>
+        <input type="range" id="offXSlider" min="-100" max="100" value="0" step="0.5">
+        <span id="offXValue" style="font-size: 12px; width: 50px; font-weight: bold;">0m</span>
+      </div>
+      <div class="slider-row">
+        <label>Y軸平移(南北):</label>
+        <input type="range" id="offYSlider" min="-100" max="100" value="0" step="0.5">
+        <span id="offYValue" style="font-size: 12px; width: 50px; font-weight: bold;">0m</span>
+      </div>
+      <button class="small" id="btnResetPost" type="button" style="background:#007aff;">重置後處理設定</button>
+    </div>
+
+    <!-- Debug 監控列 -->
+    <div class="status-bar">
+      <div>步數: <strong id="valSteps">0</strong></div>
+      <div>距離: <strong id="valDistance" style="color:#007aff;">0.0</strong>m</div>
+      <div>即時步長: <strong id="valCurrentStepLen" style="color:#34c759;">0.00</strong>m</div>
+      <div>航向: <strong id="valHeading">0</strong>°</div>
+      <div>點數: <strong id="valPoints">0</strong></div>
+    </div>
+    
+    <div class="grid-2" style="margin-top: 8px;">
+      <button id="btnAddStore" type="button" disabled class="warning">＋ 新增店舖標記</button>
+      <button id="btnExportCsv" type="button" class="secondary">📥 匯出 CSV 與 QGIS 雙軌跡(GPX)</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>已記錄商舖清單 (<span id="storeCount">0</span>)</label>
+    <div class="store-list" id="storeListContainer">
+      <div style="text-align: center; color: #999; padding: 15px;">暫無店舖記錄</div>
+    </div>
+  </div>
+
+  <!-- 店舖資料 Modal -->
+  <div class="modal" id="storeModal">
+    <div class="modal-content">
+      <h3 style="margin-top:0; margin-bottom: 10px;">新增店舖標記</h3>
+      
+      <div class="grid-2" style="margin-bottom: 12px;">
+        <button id="btnSaveStore" type="button">儲存標記</button>
+        <button id="btnCancelStore" type="button" class="danger">取消</button>
+      </div>
+
+      <div style="margin-bottom: 12px;">
+        <label>店舖相對於當前位置/方向：</label>
+        <div class="grid-3" style="margin-top: 4px;">
+          <button type="button" class="pos-btn active" id="btnSideLeft" onclick="selectSide('left')">👈 左</button>
+          <button type="button" class="pos-btn" id="btnSideCenter" onclick="selectSide('front')">🎯 前</button>
+          <button type="button" class="pos-btn" id="btnSideRight" onclick="selectSide('right')">👉 右</button>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div>
+          <label>中文名稱</label>
+          <input type="text" id="inputNameCn" placeholder="例: 喜茶">
+        </div>
+        <div>
+          <label>英文名稱</label>
+          <input type="text" id="inputNameEn" placeholder="例: HEYTEA">
+        </div>
+        <div>
+          <label>鋪號 (Shop No.)</label>
+          <input type="text" id="inputShopNo" placeholder="例: L1-01">
+        </div>
+        <div>
+          <label>備註 (Remark)</label>
+          <input type="text" id="inputRemark" placeholder="例: 近扶手梯">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      let startGps = { lat: 22.3193, lng: 114.1694 };
+      let isPdrRunning = false;
+      let startTimestampStr = ''; 
+      let showOsmMap = true;
+      
+      let currentX = 0;
+      let currentY = 0;
+      let currentHeading = 0;
+      let stepCount = 0;
+      let totalDistanceMeters = 0;
+      let lastStepLength = 0.65;
+      
+      let pathHistory = [];
+      let stores = [];
+      let capturedPos = null;
+
+      let selectedSide = 'left';
+
+      // 後處理參數
+      let postRotationDeg = 0;
+      let postScaleRatio = 1.0;
+      let postOffsetX = 0;
+      let postOffsetY = 0;
+
+      const tileCache = {};
+
+      let panX = 0;
+      let panY = 0;
+      let zoomFactor = 1.0;
+      let isDragging = false;
+      let startMouseX = 0, startMouseY = 0;
+      let initialPinchDist = null;
+
+      const canvas = document.getElementById('mapCanvas');
+      const ctx = canvas ? canvas.getContext('2d') : null;
+
+      function getCurrentFloor() {
+        let f = document.getElementById('floorInput').value.trim();
+        return f ? f : 'G';
+      }
+
+      function getCorridorOffsetDist() {
+        return parseFloat(document.getElementById('corridorSizeSelect').value) || 2.0;
+      }
+
+      function resizeCanvas() {
+        if (!canvas) return;
+        canvas.width = canvas.offsetWidth || 300;
+        canvas.height = canvas.offsetHeight || 320;
+        drawMap();
+      }
+
+      function ensureMallName() {
+        let mallInput = document.getElementById('mallName');
+        let name = mallInput.value.trim();
+        if (!name) {
+          alert('⚠️ 請先輸入「商場名稱」！');
+          mallInput.focus();
+          return false;
+        }
+        return true;
+      }
+
+      function generateTimestamp() {
+        let now = new Date();
+        let YYYY = now.getFullYear();
+        let MM = String(now.getMonth() + 1).padStart(2, '0');
+        let DD = String(now.getDate()).padStart(2, '0');
+        let hh = String(now.getHours()).padStart(2, '0');
+        let mm = String(now.getMinutes()).padStart(2, '0');
+        return `${YYYY}${MM}${DD}_${hh}${mm}`;
+      }
+
+      function resetView() {
+        panX = 0;
+        panY = 0;
+        zoomFactor = 1.0;
+        drawMap();
+      }
+      document.getElementById('btnResetView').onclick = resetView;
+
+      const btnToggleOsm = document.getElementById('btnToggleOsm');
+      btnToggleOsm.onclick = function() {
+        showOsmMap = !showOsmMap;
+        btnToggleOsm.innerText = showOsmMap ? '🗺️ 關閉底圖' : '🗺️ 開啟底圖';
+        drawMap();
+      };
+
+      // 1. GPS 定位
+      document.getElementById('btnGps').onclick = function() {
+        if (!ensureMallName()) return;
+
+        showOsmMap = true;
+        btnToggleOsm.innerText = '🗺️ 關閉底圖';
+
+        if (!navigator.geolocation) {
+          alert('此瀏覽器不支援 GPS');
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          function(pos) {
+            startGps.lat = pos.coords.latitude;
+            startGps.lng = pos.coords.longitude;
+            alert(`✅ GPS 定位成功！\nLat: ${startGps.lat.toFixed(6)}, Lng: ${startGps.lng.toFixed(6)}`);
+            document.getElementById('btnGps').innerText = '✓ GPS 已定位';
+            document.getElementById('btnGps').style.background = '#34c759';
+            resetView();
+          },
+          function(err) {
+            alert('⚠️ GPS 定位失敗/超時，使用預設起點 (0,0)');
+            document.getElementById('btnGps').innerText = '使用預設起點';
+            resetView();
+          },
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      };
+
+      // 2. Weinberg 動態步長演算法
+      const STEP_THRESHOLD = 2.2;
+      const MIN_STEP_INTERVAL = 280; // ms
+      const WEINBERG_K = 0.45;
+      let lastStepTime = 0;
+
+      let currentStepAccMax = -Infinity;
+      let currentStepAccMin = Infinity;
+
+      function handleOrientation(e) {
+        if (e.alpha !== null) {
+          currentHeading = e.webkitCompassHeading || (360 - e.alpha);
+          document.getElementById('valHeading').innerText = Math.round(currentHeading);
+        }
+      }
+
+      function handleMotion(e) {
+        let acc = e.accelerationIncludingGravity;
+        if (!acc) return;
+
+        let mag = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+        let delta = Math.abs(mag - 9.8);
+        let now = Date.now();
+
+        if (mag > currentStepAccMax) currentStepAccMax = mag;
+        if (mag < currentStepAccMin) currentStepAccMin = mag;
+
+        if (delta > STEP_THRESHOLD && (now - lastStepTime > MIN_STEP_INTERVAL)) {
+          lastStepTime = now;
+          stepCount++;
+
+          let deltaAcc = Math.max(0.1, currentStepAccMax - currentStepAccMin);
+          let dynamicStepLength = WEINBERG_K * Math.pow(deltaAcc, 0.25);
+
+          dynamicStepLength = Math.min(Math.max(dynamicStepLength, 0.30), 1.00);
+          lastStepLength = dynamicStepLength;
+          totalDistanceMeters += dynamicStepLength;
+
+          currentStepAccMax = -Infinity;
+          currentStepAccMin = Infinity;
+
+          document.getElementById('valSteps').innerText = stepCount;
+          document.getElementById('valDistance').innerText = totalDistanceMeters.toFixed(1);
+          document.getElementById('valCurrentStepLen').innerText = dynamicStepLength.toFixed(2);
+
+          let rad = (currentHeading * Math.PI) / 180;
+          currentX += dynamicStepLength * Math.sin(rad);
+          currentY += dynamicStepLength * Math.cos(rad);
+
+          pathHistory.push({
+            floor: getCurrentFloor(),
+            x: currentX,
+            y: currentY,
+            timestamp: new Date().toISOString()
+          });
+
+          document.getElementById('valPoints').innerText = pathHistory.filter(p => p.floor === getCurrentFloor()).length;
+          drawMap();
+        }
+      }
+
+      function setConfigLock(locked) {
+        document.getElementById('mallName').disabled = locked;
+        document.getElementById('floorInput').disabled = locked;
+        document.getElementById('corridorSizeSelect').disabled = locked;
+        document.getElementById('btnGps').disabled = locked;
+      }
+
+      document.getElementById('btnStartPdr').onclick = async function() {
+        const btn = document.getElementById('btnStartPdr');
+
+        if (isPdrRunning) {
+          window.removeEventListener('deviceorientation', handleOrientation);
+          window.removeEventListener('devicemotion', handleMotion);
+          isPdrRunning = false;
+          btn.innerText = '2. 開始 PDR 行走';
+          btn.className = 'secondary';
+          
+          setConfigLock(false);
+          document.getElementById('postPanel').style.display = 'block';
+          alert('⏹️ PDR 記錄已停止！欄位已解鎖。');
+          return;
+        }
+
+        if (!ensureMallName()) return;
+
+        try {
+          if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            const perm = await DeviceOrientationEvent.requestPermission();
+            if (perm !== 'granted') {
+              alert('需要同意感應器權限才能記錄！');
+              return;
+            }
+          }
+
+          window.addEventListener('deviceorientation', handleOrientation);
+          window.addEventListener('devicemotion', handleMotion);
+
+          isPdrRunning = true;
+          startTimestampStr = generateTimestamp();
+
+          setConfigLock(true);
+
+          showOsmMap = false;
+          btnToggleOsm.innerText = '🗺️ 開啟底圖';
+          document.getElementById('postPanel').style.display = 'none';
+
+          btn.innerText = '⏹️ 停止 PDR 記錄';
+          btn.className = 'danger';
+          document.getElementById('btnAddStore').disabled = false;
+          
+          pathHistory.push({ 
+            floor: getCurrentFloor(), 
+            x: currentX, 
+            y: currentY, 
+            timestamp: new Date().toISOString() 
+          });
+          resizeCanvas();
+          alert('🚀 PDR 記錄已啟動！');
+        } catch (err) {
+          alert('感應器啟動失敗: ' + err.message);
+        }
+      };
+
+      document.getElementById('floorInput').onchange = function() {
+        resetView();
+        renderStoreList();
+      };
+
+      function transformPoint(x, y) {
+        let rad = (postRotationDeg * Math.PI) / 180.0;
+        let scaledX = x * postScaleRatio;
+        let scaledY = y * postScaleRatio;
+
+        let rx = scaledX * Math.cos(rad) - scaledY * Math.sin(rad);
+        let ry = scaledX * Math.sin(rad) + scaledY * Math.cos(rad);
+
+        return { 
+          x: rx + postOffsetX, 
+          y: ry + postOffsetY 
+        };
+      }
+
+      const rotSlider = document.getElementById('rotSlider');
+      const scaleSlider = document.getElementById('scaleSlider');
+      const offXSlider = document.getElementById('offXSlider');
+      const offYSlider = document.getElementById('offYSlider');
+
+      rotSlider.oninput = function() {
+        postRotationDeg = parseFloat(this.value);
+        document.getElementById('rotValue').innerText = postRotationDeg + '°';
+        drawMap();
+        renderStoreList();
+      };
+
+      scaleSlider.oninput = function() {
+        postScaleRatio = parseFloat(this.value) / 100.0;
+        document.getElementById('scaleValue').innerText = this.value + '%';
+        drawMap();
+        renderStoreList();
+      };
+
+      offXSlider.oninput = function() {
+        postOffsetX = parseFloat(this.value);
+        document.getElementById('offXValue').innerText = postOffsetX + 'm';
+        drawMap();
+        renderStoreList();
+      };
+
+      offYSlider.oninput = function() {
+        postOffsetY = parseFloat(this.value);
+        document.getElementById('offYValue').innerText = postOffsetY + 'm';
+        drawMap();
+        renderStoreList();
+      };
+
+      document.getElementById('btnResetPost').onclick = function() {
+        rotSlider.value = 0;
+        scaleSlider.value = 100;
+        offXSlider.value = 0;
+        offYSlider.value = 0;
+
+        postRotationDeg = 0;
+        postScaleRatio = 1.0;
+        postOffsetX = 0;
+        postOffsetY = 0;
+
+        document.getElementById('rotValue').innerText = '0°';
+        document.getElementById('scaleValue').innerText = '100%';
+        document.getElementById('offXValue').innerText = '0m';
+        document.getElementById('offYValue').innerText = '0m';
+        drawMap();
+        renderStoreList();
+      };
+
+      function lon2tile(lon, zoom) { return Math.floor((lon + 180) / 360 * Math.pow(2, zoom)); }
+      function lat2tile(lat, zoom) { return Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom)); }
+      function tile2lon(x, z) { return (x / Math.pow(2, z) * 360 - 180); }
+      function tile2lat(y, z) {
+        let n = Math.PI - 2 * Math.PI * y / Math.pow(2, z);
+        return (180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))));
+      }
+
+      // 🎯 瓦片緩衝區擴展至 11x11（dx, dy 從 -5 到 5），防大幅拉遠視角時周圍留白
+      function drawOsmTiles(centerLat, centerLng, zoom, scale, toCanvasX, toCanvasY) {
+        let osmZoom = 18;
+        let tileX = lon2tile(centerLng, osmZoom);
+        let tileY = lat2tile(centerLat, osmZoom);
+
+        // 涵蓋 -5 至 +5 區域 (11x11 瓦片矩陣)
+        for (let dx = -5; dx <= 5; dx++) {
+          for (let dy = -5; dy <= 5; dy++) {
+            let tx = tileX + dx;
+            let ty = tileY + dy;
+            let tileKey = `${osmZoom}_${tx}_${ty}`;
+
+            let tNwLat = tile2lat(ty, osmZoom);
+            let tNwLng = tile2lon(tx, osmZoom);
+            let tSeLat = tile2lat(ty + 1, osmZoom);
+            let tSeLng = tile2lon(tx + 1, osmZoom);
+
+            let relX_nw = (tNwLng - centerLng) * (111000.0 * Math.cos(centerLat * Math.PI / 180.0));
+            let relY_nw = (tNwLat - centerLat) * 111000.0;
+            let relX_se = (tSeLng - centerLng) * (111000.0 * Math.cos(centerLat * Math.PI / 180.0));
+            let relY_se = (tSeLat - centerLat) * 111000.0;
+
+            let cX1 = toCanvasX(relX_nw);
+            let cY1 = toCanvasY(relY_nw);
+            let cX2 = toCanvasX(relX_se);
+            let cY2 = toCanvasY(relY_se);
+
+            if (!tileCache[tileKey]) {
+              let img = new Image();
+              img.crossOrigin = "Anonymous";
+              img.src = `https://tile.openstreetmap.org/${osmZoom}/${tx}/${ty}.png`;
+              img.onload = () => drawMap();
+              tileCache[tileKey] = img;
+            } else if (tileCache[tileKey].complete) {
+              ctx.drawImage(tileCache[tileKey], cX1, cY1, cX2 - cX1, cY2 - cY1);
+            }
+          }
+        }
+      }
+
+      // 3. Canvas 繪製
+      function drawMap() {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        let cFloor = getCurrentFloor();
+        const floorPaths = pathHistory.filter(p => p.floor === cFloor);
+        const floorStores = stores.filter(s => s.floor === cFloor);
+
+        let transformedPaths = floorPaths.map(p => {
+          let tp = transformPoint(p.x, p.y);
+          return { x: tp.x, y: tp.y };
+        });
+
+        let curTrans = transformPoint(currentX, currentY);
+
+        let minX = curTrans.x, maxX = curTrans.x, minY = curTrans.y, maxY = curTrans.y;
+        transformedPaths.forEach(p => {
+          minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+          minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+        });
+
+        const padding = 40;
+        const rangeX = (maxX - minX) || 10;
+        const rangeY = (maxY - minY) || 10;
+        const baseScale = Math.min((canvas.width - padding * 2) / rangeX, (canvas.height - padding * 2) / rangeY);
+        const scale = baseScale * zoomFactor;
+
+        function toCanvasX(x) { return (canvas.width / 2) + panX + (x - (minX + maxX) / 2) * scale; }
+        function toCanvasY(y) { return (canvas.height / 2) + panY - (y - (minY + maxY) / 2) * scale; }
+
+        if (showOsmMap && startGps.lat && startGps.lng) {
+          ctx.fillStyle = '#e0e0e0';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          drawOsmTiles(startGps.lat, startGps.lng, zoomFactor, scale, toCanvasX, toCanvasY);
+        } else {
+          ctx.fillStyle = '#1c1c1e';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.strokeStyle = '#2c2c2e';
+          ctx.lineWidth = 1;
+          let gridSize = 30 * zoomFactor;
+          let startGridX = (panX % gridSize);
+          let startGridY = (panY % gridSize);
+
+          for (let x = startGridX; x < canvas.width; x += gridSize) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+          for (let y = startGridY; y < canvas.height; y += gridSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+        }
+
+        if (transformedPaths.length > 1) {
+          ctx.beginPath();
+          ctx.strokeStyle = '#007aff';
+          ctx.lineWidth = Math.max(2, 4 * zoomFactor);
+          ctx.lineJoin = 'round';
+          transformedPaths.forEach((pt, i) => {
+            let cx = toCanvasX(pt.x);
+            let cy = toCanvasY(pt.y);
+            if (i === 0) ctx.moveTo(cx, cy);
+            else ctx.lineTo(cx, cy);
+          });
+          ctx.stroke();
+        }
+
+        floorStores.forEach(s => {
+          let transStore = transformPoint(s.finalX, s.finalY);
+          let sx = toCanvasX(transStore.x);
+          let sy = toCanvasY(transStore.y);
+
+          ctx.fillStyle = '#ff9500';
+          ctx.beginPath(); ctx.arc(sx, sy, Math.max(4, 6 * zoomFactor), 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+
+          ctx.fillStyle = showOsmMap ? '#000000' : '#ffffff';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.fillText(`${s.shopNo} ${s.nameCn || s.nameEn}`, sx + 8, sy + 4);
+        });
+
+        let curCX = toCanvasX(curTrans.x);
+        let curCY = toCanvasY(curTrans.y);
+        ctx.fillStyle = '#34c759';
+        ctx.beginPath(); ctx.arc(curCX, curCY, Math.max(6, 8 * zoomFactor), 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+      }
+
+      // 🎯 超大範圍縮放支援：最小縮放放寬至 0.01（可拉遠看清大型商場全貌）
+      canvas.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startMouseX = e.clientX - panX;
+        startMouseY = e.clientY - panY;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        panX = e.clientX - startMouseX;
+        panY = e.clientY - startMouseY;
+        drawMap();
+      });
+
+      window.addEventListener('mouseup', () => { isDragging = false; });
+
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (e.deltaY < 0) zoomFactor *= 1.1;
+        else zoomFactor /= 1.1;
+        // 放寬 zoomFactor 下限至 0.01
+        zoomFactor = Math.min(Math.max(0.01, zoomFactor), 15.0);
+        drawMap();
+      }, { passive: false });
+
+      canvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startMouseX = e.touches[0].clientX - panX;
+          startMouseY = e.touches[0].clientY - panY;
+        } else if (e.touches.length === 2) {
+          isDragging = false;
+          initialPinchDist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+        }
+      });
+
+      canvas.addEventListener('touchmove', (e) => {
+        if (isDragging && e.touches.length === 1) {
+          panX = e.touches[0].clientX - startMouseX;
+          panY = e.touches[0].clientY - startMouseY;
+          drawMap();
+        } else if (e.touches.length === 2 && initialPinchDist) {
+          let dist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+          );
+          let factor = dist / initialPinchDist;
+          zoomFactor *= factor;
+          // 雙指手勢放寬 zoomFactor 下限至 0.01
+          zoomFactor = Math.min(Math.max(0.01, zoomFactor), 15.0);
+          initialPinchDist = dist;
+          drawMap();
+        }
+      });
+
+      canvas.addEventListener('touchend', () => {
+        isDragging = false;
+        initialPinchDist = null;
+      });
+
+      window.selectSide = function(side) {
+        selectedSide = side;
+        let dist = getCorridorOffsetDist();
+        document.getElementById('btnSideLeft').className = 'pos-btn' + (side === 'left' ? ' active' : '');
+        document.getElementById('btnSideCenter').className = 'pos-btn' + (side === 'front' ? ' active' : '');
+        document.getElementById('btnSideRight').className = 'pos-btn' + (side === 'right' ? ' active' : '');
+
+        document.getElementById('btnSideLeft').innerText = `👈 左 (${dist}m)`;
+        document.getElementById('btnSideCenter').innerText = `🎯 前 (${dist}m)`;
+        document.getElementById('btnSideRight').innerText = `👉 右 (${dist}m)`;
+      };
+
+      // 4. 店舖標記 Modal
+      const modal = document.getElementById('storeModal');
+      
+      document.getElementById('btnAddStore').onclick = function() {
+        capturedPos = {
+          x: currentX,
+          y: currentY,
+          heading: currentHeading
+        };
+
+        selectSide('left');
+
+        document.getElementById('inputNameCn').value = '';
+        document.getElementById('inputNameEn').value = '';
+        document.getElementById('inputShopNo').value = '';
+        document.getElementById('inputRemark').value = '';
+        modal.style.display = 'flex';
+      };
+
+      document.getElementById('btnCancelStore').onclick = function() { modal.style.display = 'none'; };
+
+      document.getElementById('btnSaveStore').onclick = function() {
+        let nameCn = document.getElementById('inputNameCn').value.trim();
+        let nameEn = document.getElementById('inputNameEn').value.trim();
+        let shopNo = document.getElementById('inputShopNo').value.trim();
+        let remark = document.getElementById('inputRemark').value.trim();
+
+        if (!nameCn && !nameEn && !shopNo) {
+          alert('請至少輸入名稱或鋪號！');
+          return;
+        }
+
+        let storeObj = {
+          id: 'store_' + Date.now(),
+          mall: document.getElementById('mallName').value,
+          floor: getCurrentFloor(),
+          nameCn: nameCn,
+          nameEn: nameEn,
+          shopNo: shopNo,
+          remark: remark,
+          rawX: capturedPos ? capturedPos.x : currentX,
+          rawY: capturedPos ? capturedPos.y : currentY,
+          heading: capturedPos ? capturedPos.heading : currentHeading,
+          side: selectedSide,
+          offsetDist: getCorridorOffsetDist(),
+          finalX: 0,
+          finalY: 0
+        };
+
+        calculateOffsetPos(storeObj);
+        stores.push(storeObj);
+
+        modal.style.display = 'none';
+        drawMap();
+        renderStoreList();
+      };
+
+      function calculateOffsetPos(store) {
+        let sideHeading = store.heading;
+        let offsetDist = store.offsetDist || 2.0;
+
+        if (store.side === 'left') sideHeading = store.heading - 90;
+        if (store.side === 'right') sideHeading = store.heading + 90;
+        if (store.side === 'front') sideHeading = store.heading;
+
+        let rad = (sideHeading * Math.PI) / 180.0;
+        store.finalX = store.rawX + offsetDist * Math.sin(rad);
+        store.finalY = store.rawY + offsetDist * Math.cos(rad);
+      }
+
+      function renderStoreList() {
+        const container = document.getElementById('storeListContainer');
+        document.getElementById('storeCount').innerText = stores.length;
+
+        if (stores.length === 0) {
+          container.innerHTML = '<div style="text-align: center; color: #999; padding: 15px;">暫無店舖記錄</div>';
+          return;
+        }
+
+        container.innerHTML = '';
+        stores.forEach(s => {
+          let adjusted = transformPoint(s.finalX, s.finalY);
+          let div = document.createElement('div');
+          div.className = 'store-item';
+          div.innerHTML = `
+            <header>
+              <span>[${s.floor}] ${s.shopNo} - ${s.nameCn} (${s.nameEn})</span>
+              <span style="color:#007aff;">${s.side.toUpperCase()} (${s.offsetDist}m)</span>
+            </header>
+            <div><strong>備註:</strong> ${s.remark || '無'}</div>
+            <div style="font-size:11px; color:#8e8e93; margin-top:2px;">
+              原始微調點 (Raw Final): (${s.finalX.toFixed(2)}m, ${s.finalY.toFixed(2)}m)<br>
+              <strong>調整後點 (Adjusted): (${adjusted.x.toFixed(2)}m, ${adjusted.y.toFixed(2)}m)</strong>
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      }
+
+      function downloadFile(content, fileName, mimeType) {
+        let blob = new Blob([content], { type: mimeType });
+        let url = URL.createObjectURL(blob);
+        let a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      // 5. 匯出 CSV 與 GPX
+      document.getElementById('btnExportCsv').onclick = function() {
+        if (stores.length === 0 && pathHistory.length === 0) {
+          alert('目前無任何店舖或軌跡資料可供匯出！');
+          return;
+        }
+
+        let mallNameStr = document.getElementById('mallName').value.trim() || 'Mall';
+        let currentFloorStr = getCurrentFloor();
+        let tsStr = startTimestampStr || generateTimestamp();
+
+        if (stores.length > 0) {
+          let csvRows = [];
+          csvRows.push([
+            'Mall_Name',
+            'Floor',
+            'Shop_No',
+            'Name_CN',
+            'Name_EN',
+            'Remark',
+            'Side_Offset',
+            'Offset_Dist_m',
+            'GPS_Start_Lat',
+            'GPS_Start_Lng',
+            'Raw_Final_X_m',
+            'Raw_Final_Y_m',
+            'Adjusted_X_m',
+            'Adjusted_Y_m',
+            'Final_Lat',
+            'Final_Lng'
+          ].join(','));
+
+          stores.forEach(s => {
+            let adj = transformPoint(s.finalX, s.finalY);
+            let finalLat = '', finalLng = '';
+            if (startGps.lat && startGps.lng) {
+              finalLat = (startGps.lat + (adj.y / 111000.0)).toFixed(7);
+              finalLng = (startGps.lng + (adj.x / (111000.0 * Math.cos(startGps.lat * Math.PI / 180.0)))).toFixed(7);
+            }
+
+            let row = [
+              `"${s.mall}"`,
+              `"${s.floor}"`,
+              `"${s.shopNo}"`,
+              `"${s.nameCn}"`,
+              `"${s.nameEn}"`,
+              `"${s.remark}"`,
+              `"${s.side}"`,
+              s.offsetDist || 2.0,
+              startGps.lat || '',
+              startGps.lng || '',
+              s.finalX.toFixed(3),
+              s.finalY.toFixed(3),
+              adj.x.toFixed(3),
+              adj.y.toFixed(3),
+              finalLat,
+              finalLng
+            ];
+            csvRows.push(row.join(','));
+          });
+
+          let csvString = '\uFEFF' + csvRows.join('\n');
+          let csvFileName = `${mallNameStr}_${currentFloorStr}_stores_${tsStr}.csv`;
+          downloadFile(csvString, csvFileName, 'text/csv;charset=utf-8;');
+        }
+
+        if (pathHistory.length > 0) {
+          let rawTrkpts = '';
+          pathHistory.forEach(pt => {
+            let lat = startGps.lat ? (startGps.lat + (pt.y / 111000.0)).toFixed(7) : 0;
+            let lng = startGps.lng ? (startGps.lng + (pt.x / (111000.0 * Math.cos(startGps.lat * Math.PI / 180.0)))).toFixed(7) : 0;
+            rawTrkpts += `\n      <trkpt lat="${lat}" lon="${lng}"><time>${pt.timestamp}</time></trkpt>`;
+          });
+
+          let rawGpxContent = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="MallPDRMapper" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>${mallNameStr} ${currentFloorStr} (Raw)</name><trkseg>${rawTrkpts}\n  </trkseg></trk>
+</gpx>`;
+
+          let rawGpxFileName = `${mallNameStr}_${currentFloorStr}_track_raw_${tsStr}.gpx`;
+
+          let adjTrkpts = '';
+          pathHistory.forEach(pt => {
+            let adjPt = transformPoint(pt.x, pt.y);
+            let lat = startGps.lat ? (startGps.lat + (adjPt.y / 111000.0)).toFixed(7) : 0;
+            let lng = startGps.lng ? (startGps.lng + (adjPt.x / (111000.0 * Math.cos(startGps.lat * Math.PI / 180.0)))).toFixed(7) : 0;
+            adjTrkpts += `\n      <trkpt lat="${lat}" lon="${lng}"><time>${pt.timestamp}</time></trkpt>`;
+          });
+
+          let adjGpxContent = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="MallPDRMapper" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>${mallNameStr} ${currentFloorStr} (Adjusted)</name><trkseg>${adjTrkpts}\n  </trkseg></trk>
+</gpx>`;
+
+          let adjGpxFileName = `${mallNameStr}_${currentFloorStr}_track_adjusted_${tsStr}.gpx`;
+
+          setTimeout(() => { downloadFile(rawGpxContent, rawGpxFileName, 'application/gpx+xml;charset=utf-8;'); }, 300);
+          setTimeout(() => { downloadFile(adjGpxContent, adjGpxFileName, 'application/gpx+xml;charset=utf-8;'); }, 600);
+        }
+      };
+
+      resizeCanvas();
+    });
+  </script>
+</body>
+</html>
