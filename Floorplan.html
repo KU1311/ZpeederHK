@@ -201,6 +201,8 @@
             <option value="銀行及金融服務">銀行及金融服務</option>
             <option value="旅遊">旅遊</option>
             <option value="通訊">通訊</option>
+            <option value="地產">地產</option>
+            <option value="裝修">裝修</option>
             <option value="其他">其他</option>
           </select>
         </div>
@@ -245,7 +247,7 @@
       
       let pathHistory = [];
       let stores = [];
-      let pendingStoreObj = null; // 暫存待發布的標記物件
+      let pendingStoreObj = null;
       let editingStoreId = null;
 
       // 後處理參數
@@ -314,7 +316,7 @@
         let now = new Date();
         let YYYY = now.getFullYear();
         let MM = String(now.getMonth() + 1).padStart(2, '0');
-        let DD = String(now.getMonth() + 1).padStart(2, '0');
+        let DD = String(now.getDate()).padStart(2, '0');
         let hh = String(now.getHours()).padStart(2, '0');
         let mm = String(now.getMinutes()).padStart(2, '0');
         return `${YYYY}${MM}${DD}_${hh}${mm}`;
@@ -433,7 +435,6 @@
         document.getElementById('stepKSelect').disabled = locked;
         document.getElementById('btnGps').disabled = locked;
 
-        // 6 個打點按鈕啟用/禁用
         ['btnAddLf', 'btnAddF6', 'btnAddRf', 'btnAddL', 'btnAddC', 'btnAddR'].forEach(id => {
           document.getElementById(id).disabled = !locked;
         });
@@ -757,7 +758,7 @@
         initialPinchDist = null;
       });
 
-      // 🎯 點擊 6 個按鈕：計算座標並「彈出 Popup」供使用者輸入資料
+      // 點擊 6 個按鈕快抓打點
       const modal = document.getElementById('storeModal');
       const btnDeleteStore = document.getElementById('btnDeleteStore');
 
@@ -832,7 +833,7 @@
         modal.style.display = 'flex';
       };
 
-      // 點擊清單項目進行「編輯」
+      // 點擊清單項目進行編輯
       window.editStore = function(storeId) {
         let store = stores.find(s => s.id === storeId);
         if (!store) return;
@@ -871,7 +872,7 @@
         }
       };
 
-      // 按「取消」按鈕 (若是新增快抓則直接作廢)
+      // 按「取消」按鈕
       document.getElementById('btnCancelStore').onclick = function() {
         pendingStoreObj = null;
         editingStoreId = null;
@@ -888,7 +889,6 @@
         let remark = document.getElementById('inputRemark').value.trim();
 
         if (editingStoreId) {
-          // 修改已有店舖
           let store = stores.find(s => s.id === editingStoreId);
           if (store) {
             store.shopNo = shopNo;
@@ -899,7 +899,6 @@
             store.remark = remark;
           }
         } else if (pendingStoreObj) {
-          // 儲存快抓的新店舖
           pendingStoreObj.shopNo = shopNo;
           pendingStoreObj.nameCn = nameCn;
           pendingStoreObj.nameEn = nameEn;
@@ -961,7 +960,7 @@
         URL.revokeObjectURL(url);
       }
 
-      // 5. 匯出 CSV 與 GPX
+      // 5. 匯出 CSV 與 GPX (已移除 Raw_Final_X_m, Raw_Final_Y_m, Adjusted_X_m, Adjusted_Y_m)
       document.getElementById('btnExportCsv').onclick = function() {
         if (stores.length === 0 && pathHistory.length === 0) {
           alert('目前無任何店舖或軌跡資料可供匯出！');
@@ -987,10 +986,6 @@
             'Offset_Dist_m',
             'GPS_Start_Lat',
             'GPS_Start_Lng',
-            'Raw_Final_X_m',
-            'Raw_Final_Y_m',
-            'Adjusted_X_m',
-            'Adjusted_Y_m',
             'Final_Y',
             'Final_X'
           ].join(','));
@@ -1016,10 +1011,6 @@
               s.offsetDist || 2.0,
               startGps.lat || '',
               startGps.lng || '',
-              s.finalX.toFixed(3),
-              s.finalY.toFixed(3),
-              adj.x.toFixed(3),
-              adj.y.toFixed(3),
               finalY,
               finalX
             ];
