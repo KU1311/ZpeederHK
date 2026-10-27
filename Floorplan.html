@@ -138,10 +138,10 @@
       <div>點數: <strong id="valPoints">0</strong></div>
     </div>
     
-    <!-- 🎯 新增：2 行 6 個直打店舖按鈕 -->
+    <!-- 2 行 6 個按鈕快抓標記 -->
     <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
-      <label style="margin-bottom: 2px;">快抓打點 (點擊直接新增店舖)：</label>
-      <!-- 第一行：預先向前方打點 (防阻路) -->
+      <label style="margin-bottom: 2px;">新增店舖標記 (點擊選擇方向並填寫資料)：</label>
+      <!-- 第一行：預先向前方打點 -->
       <div class="grid-3">
         <button type="button" class="quick-add-btn" id="btnAddLf" disabled onclick="quickAddStore('left_front')">👈 左前 (+4m)</button>
         <button type="button" class="quick-add-btn" id="btnAddF6" disabled onclick="quickAddStore('front_6m')">🎯 正前 (+6m)</button>
@@ -165,13 +165,13 @@
     </div>
   </div>
 
-  <!-- 店舖資料 Modal (僅保留資料編輯，方向已由按鈕決定) -->
+  <!-- 店舖資料 Modal (新增/編輯 Popup) -->
   <div class="modal" id="storeModal">
     <div class="modal-content">
-      <h3 style="margin-top:0; margin-bottom: 10px;" id="modalTitle">店舖資料編輯</h3>
+      <h3 style="margin-top:0; margin-bottom: 10px;" id="modalTitle">新增店舖標記</h3>
       
       <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-        <button id="btnSaveStore" type="button" style="flex:1;">儲存資料</button>
+        <button id="btnSaveStore" type="button" style="flex:1;">儲存標記</button>
         <button id="btnDeleteStore" type="button" class="danger" style="flex:1; display:none;">🗑️ 刪除標記</button>
         <button id="btnCancelStore" type="button" class="danger" style="flex:1; background:#8e8e93;">取消</button>
       </div>
@@ -245,7 +245,7 @@
       
       let pathHistory = [];
       let stores = [];
-      let capturedPos = null;
+      let pendingStoreObj = null; // 暫存待發布的標記物件
       let editingStoreId = null;
 
       // 後處理參數
@@ -314,7 +314,7 @@
         let now = new Date();
         let YYYY = now.getFullYear();
         let MM = String(now.getMonth() + 1).padStart(2, '0');
-        let DD = String(now.getDate()).padStart(2, '0');
+        let DD = String(now.getMonth() + 1).padStart(2, '0');
         let hh = String(now.getHours()).padStart(2, '0');
         let mm = String(now.getMinutes()).padStart(2, '0');
         return `${YYYY}${MM}${DD}_${hh}${mm}`;
@@ -433,7 +433,7 @@
         document.getElementById('stepKSelect').disabled = locked;
         document.getElementById('btnGps').disabled = locked;
 
-        // 打點按鈕啟用/禁用
+        // 6 個打點按鈕啟用/禁用
         ['btnAddLf', 'btnAddF6', 'btnAddRf', 'btnAddL', 'btnAddC', 'btnAddR'].forEach(id => {
           document.getElementById(id).disabled = !locked;
         });
@@ -488,7 +488,7 @@
             timestamp: new Date().toISOString() 
           });
           resizeCanvas();
-          alert('🚀 PDR 記錄已啟動！請點擊下方 6 個按鈕一鍵打點。');
+          alert('🚀 PDR 記錄已啟動！請點擊按鈕進行快抓標記。');
         } catch (err) {
           alert('感應器啟動失敗: ' + err.message);
         }
@@ -757,12 +757,17 @@
         initialPinchDist = null;
       });
 
-      // 🎯 核心：2 行 6 個按鈕即時直打打點 (計算 Offset 與向前 4m/6m 延伸向量)
+      // 🎯 點擊 6 個按鈕：計算座標並「彈出 Popup」供使用者輸入資料
+      const modal = document.getElementById('storeModal');
+      const btnDeleteStore = document.getElementById('btnDeleteStore');
+
       window.quickAddStore = function(mode) {
         if (!isPdrRunning) return;
 
+        editingStoreId = null;
         let corridorDist = getCorridorOffsetDist();
-        let storeObj = {
+
+        pendingStoreObj = {
           id: 'store_' + Date.now(),
           mall: document.getElementById('mallName').value,
           floor: getCurrentFloor(),
@@ -781,7 +786,7 @@
           finalY: 0
         };
 
-        // 向量幾何計算 (Offset + 沿航向前置距離)
+        // 幾何座標計算
         let radHeading = (currentHeading * Math.PI) / 180.0;
         let radLeft = ((currentHeading - 90) * Math.PI) / 180.0;
         let radRight = ((currentHeading + 90) * Math.PI) / 180.0;
@@ -799,36 +804,42 @@
           fx += corridorDist * Math.sin(radHeading);
           fy += corridorDist * Math.cos(radHeading);
         } else if (mode === 'left_front') {
-          // 左側 Corridor 距離 + 沿當前航向前置 4 米
           fx += corridorDist * Math.sin(radLeft) + 4.0 * Math.sin(radHeading);
           fy += corridorDist * Math.cos(radLeft) + 4.0 * Math.cos(radHeading);
         } else if (mode === 'right_front') {
-          // 右側 Corridor 距離 + 沿當前航向前置 4 米
           fx += corridorDist * Math.sin(radRight) + 4.0 * Math.sin(radHeading);
           fy += corridorDist * Math.cos(radRight) + 4.0 * Math.cos(radHeading);
         } else if (mode === 'front_6m') {
-          // 沿當前航向前置 6 米
           fx += 6.0 * Math.sin(radHeading);
           fy += 6.0 * Math.cos(radHeading);
         }
 
-        storeObj.finalX = fx;
-        storeObj.finalY = fy;
+        pendingStoreObj.finalX = fx;
+        pendingStoreObj.finalY = fy;
 
-        stores.push(storeObj);
-        drawMap();
-        renderStoreList();
+        // 清空表單並彈出 Modal
+        document.getElementById('modalTitle').innerText = `新增店舖標記 [${mode.toUpperCase()}]`;
+        btnDeleteStore.style.display = 'none';
+
+        document.getElementById('inputShopNo').value = '';
+        document.getElementById('inputNameCn').value = '';
+        document.getElementById('inputNameEn').value = '';
+        selectCategory.value = '';
+        selectSubCategory.value = '';
+        subCategoryGroup.style.display = 'none';
+        document.getElementById('inputRemark').value = '';
+
+        modal.style.display = 'flex';
       };
 
-      // Modal 編輯與刪除功能
-      const modal = document.getElementById('storeModal');
-      const btnDeleteStore = document.getElementById('btnDeleteStore');
-
+      // 點擊清單項目進行「編輯」
       window.editStore = function(storeId) {
         let store = stores.find(s => s.id === storeId);
         if (!store) return;
 
         editingStoreId = storeId;
+        pendingStoreObj = null;
+
         document.getElementById('modalTitle').innerText = `編輯店舖 [${store.shopNo || '未命名'}]`;
         btnDeleteStore.style.display = 'block';
 
@@ -849,6 +860,7 @@
         modal.style.display = 'flex';
       };
 
+      // 按「刪除」按鈕
       btnDeleteStore.onclick = function() {
         if (!editingStoreId) return;
         if (confirm('⚠️ 確定要刪除這個店舖標記嗎？')) {
@@ -859,19 +871,44 @@
         }
       };
 
-      document.getElementById('btnCancelStore').onclick = function() { modal.style.display = 'none'; };
+      // 按「取消」按鈕 (若是新增快抓則直接作廢)
+      document.getElementById('btnCancelStore').onclick = function() {
+        pendingStoreObj = null;
+        editingStoreId = null;
+        modal.style.display = 'none';
+      };
 
+      // 按「儲存」按鈕
       document.getElementById('btnSaveStore').onclick = function() {
-        if (!editingStoreId) return;
+        let nameCn = document.getElementById('inputNameCn').value.trim();
+        let nameEn = document.getElementById('inputNameEn').value.trim();
+        let shopNo = document.getElementById('inputShopNo').value.trim();
+        let category = selectCategory.value;
+        let subCategory = (category === '購物') ? selectSubCategory.value : '';
+        let remark = document.getElementById('inputRemark').value.trim();
 
-        let store = stores.find(s => s.id === editingStoreId);
-        if (store) {
-          store.shopNo = document.getElementById('inputShopNo').value.trim();
-          store.nameCn = document.getElementById('inputNameCn').value.trim();
-          store.nameEn = document.getElementById('inputNameEn').value.trim();
-          store.category = selectCategory.value;
-          store.subCategory = (store.category === '購物') ? selectSubCategory.value : '';
-          store.remark = document.getElementById('inputRemark').value.trim();
+        if (editingStoreId) {
+          // 修改已有店舖
+          let store = stores.find(s => s.id === editingStoreId);
+          if (store) {
+            store.shopNo = shopNo;
+            store.nameCn = nameCn;
+            store.nameEn = nameEn;
+            store.category = category;
+            store.subCategory = subCategory;
+            store.remark = remark;
+          }
+        } else if (pendingStoreObj) {
+          // 儲存快抓的新店舖
+          pendingStoreObj.shopNo = shopNo;
+          pendingStoreObj.nameCn = nameCn;
+          pendingStoreObj.nameEn = nameEn;
+          pendingStoreObj.category = category;
+          pendingStoreObj.subCategory = subCategory;
+          pendingStoreObj.remark = remark;
+
+          stores.push(pendingStoreObj);
+          pendingStoreObj = null;
         }
 
         modal.style.display = 'none';
@@ -924,7 +961,7 @@
         URL.revokeObjectURL(url);
       }
 
-      // 5. 匯出 CSV 與校正後的 GPX (僅保留 adjusted.gpx，Header 改為 Final_Y, Final_X)
+      // 5. 匯出 CSV 與 GPX
       document.getElementById('btnExportCsv').onclick = function() {
         if (stores.length === 0 && pathHistory.length === 0) {
           alert('目前無任何店舖或軌跡資料可供匯出！');
@@ -954,8 +991,8 @@
             'Raw_Final_Y_m',
             'Adjusted_X_m',
             'Adjusted_Y_m',
-            'Final_Y',  // 🎯 修改標頭 1
-            'Final_X'   // 🎯 修改標頭 2
+            'Final_Y',
+            'Final_X'
           ].join(','));
 
           stores.forEach(s => {
@@ -994,7 +1031,7 @@
           downloadFile(csvString, csvFileName, 'text/csv;charset=utf-8;');
         }
 
-        // 🎯 僅匯出校正後的 GPX (Adjusted GPX Only)
+        // 僅匯出校正後的 GPX (Adjusted GPX Only)
         if (pathHistory.length > 0) {
           let adjTrkpts = '';
           pathHistory.forEach(pt => {
