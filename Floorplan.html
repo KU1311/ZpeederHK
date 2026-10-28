@@ -203,6 +203,11 @@
             <option value="通訊">通訊</option>
             <option value="地產">地產</option>
             <option value="裝修">裝修</option>
+            <option value="教育">教育</option>
+            <option value="體育運動">體育運動</option>
+            <option value="醫療">醫療</option>
+            <option value="宗教及拜祭">宗教及拜祭</option>
+            <option value="社會服務">社會服務</option>
             <option value="其他">其他</option>
           </select>
         </div>
@@ -960,7 +965,7 @@
         URL.revokeObjectURL(url);
       }
 
-      // 5. 匯出 CSV 與 GPX (已移除 Raw_Final_X_m, Raw_Final_Y_m, Adjusted_X_m, Adjusted_Y_m)
+      // 5. 匯出 CSV 與 GPX
       document.getElementById('btnExportCsv').onclick = function() {
         if (stores.length === 0 && pathHistory.length === 0) {
           alert('目前無任何店舖或軌跡資料可供匯出！');
