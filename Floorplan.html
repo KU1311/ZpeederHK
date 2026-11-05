@@ -24,8 +24,9 @@
     button.warning { background: #ff9500; }
     button.small { padding: 6px 10px; font-size: 12px; width: auto; }
     
-    .pos-btn { background: #e5e5ea; color: #1c1c1e; padding: 10px; font-size: 13px; font-weight: bold; border-radius: 8px; border: 2px solid transparent; cursor: pointer; text-align: center; }
-    .pos-btn.active { background: #007aff; color: white; border-color: #0051a8; }
+    /* 打點按鈕專用樣式 */
+    .quick-add-btn { background: #ff9500; color: white; padding: 10px 4px; font-size: 12px; font-weight: bold; border-radius: 8px; border: none; cursor: pointer; text-align: center; }
+    .quick-add-btn:disabled { background: #b0b0b8; opacity: 0.6; cursor: not-allowed; }
 
     #canvas-container { width: 100%; height: 320px; background: #1c1c1e; border-radius: 12px; position: relative; overflow: hidden; touch-action: none; }
     canvas { display: block; width: 100%; height: 100%; cursor: grab; }
@@ -42,13 +43,14 @@
     .status-bar { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1.2fr; gap: 4px; font-size: 11px; color: #666; margin-top: 6px; text-align: center; }
     .status-bar div { background: #e5e5ea; padding: 4px; border-radius: 4px; }
     
-    .store-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
-    .store-item { background: #f8f9fa; border: 1px solid #e5e5ea; border-radius: 8px; padding: 10px; margin-bottom: 8px; font-size: 13px; }
+    .store-list { max-height: 220px; overflow-y: auto; margin-top: 8px; }
+    .store-item { background: #f8f9fa; border: 1px solid #e5e5ea; border-radius: 8px; padding: 10px; margin-bottom: 8px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
+    .store-item:active { background: #e5e5ea; }
     .store-item header { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 4px; }
 
     /* Modal */
     .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999; justify-content: center; align-items: center; }
-    .modal-content { background: white; border-radius: 12px; padding: 16px; width: 90%; max-width: 400px; }
+    .modal-content { background: white; border-radius: 12px; padding: 16px; width: 90%; max-width: 400px; max-height: 90vh; overflow-y: auto; }
   </style>
 </head>
 <body>
@@ -67,12 +69,23 @@
       </div>
     </div>
 
-    <div style="margin-bottom: 8px;">
-      <label>商場走廊大小 (Offset 距離)：</label>
-      <select id="corridorSizeSelect">
-        <option value="2" selected>🚶 小型通道 (2m)</option>
-        <option value="4">🏃 大型通道 (4m)</option>
-      </select>
+    <div class="grid-2" style="margin-bottom: 8px;">
+      <div>
+        <label>商場走廊大小：</label>
+        <select id="corridorSizeSelect">
+          <option value="2" selected>🚶 小型通道 (2m)</option>
+          <option value="4">🏃 大型通道 (4m)</option>
+        </select>
+      </div>
+
+      <div>
+        <label>步長推進靈敏度：</label>
+        <select id="stepKSelect">
+          <option value="0.38">🐢 偏慢 (系統走太快時選這)</option>
+          <option value="0.45" selected>🚶 標準 (預設)</option>
+          <option value="0.52">🐇 偏快 (系統走太慢時選這)</option>
+        </select>
+      </div>
     </div>
 
     <div class="grid-2">
@@ -125,39 +138,49 @@
       <div>點數: <strong id="valPoints">0</strong></div>
     </div>
     
-    <div class="grid-2" style="margin-top: 8px;">
-      <button id="btnAddStore" type="button" disabled class="warning">＋ 新增店舖標記</button>
-      <button id="btnExportCsv" type="button" class="secondary">📥 匯出 CSV 與 QGIS 雙軌跡(GPX)</button>
+    <!-- 2 行 6 個按鈕快抓標記 -->
+    <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+      <label style="margin-bottom: 2px;">新增店舖標記 (點擊選擇方向並填寫資料)：</label>
+      <!-- 第一行：預先向前方打點 -->
+      <div class="grid-3">
+        <button type="button" class="quick-add-btn" id="btnAddLf" disabled onclick="quickAddStore('left_front')">👈 左前 (+4m)</button>
+        <button type="button" class="quick-add-btn" id="btnAddF6" disabled onclick="quickAddStore('front_6m')">🎯 正前 (+6m)</button>
+        <button type="button" class="quick-add-btn" id="btnAddRf" disabled onclick="quickAddStore('right_front')">👉 右前 (+4m)</button>
+      </div>
+      <!-- 第二行：當前平行位置打點 -->
+      <div class="grid-3">
+        <button type="button" class="quick-add-btn" id="btnAddL" disabled onclick="quickAddStore('left')">👈 左</button>
+        <button type="button" class="quick-add-btn" id="btnAddC" disabled onclick="quickAddStore('front')">🎯 正前</button>
+        <button type="button" class="quick-add-btn" id="btnAddR" disabled onclick="quickAddStore('right')">👉 右</button>
+      </div>
+      
+      <button id="btnExportCsv" type="button" class="secondary" style="margin-top: 4px;">📥 匯出 CSV 與 QGIS 軌跡(GPX)</button>
     </div>
   </div>
 
   <div class="card">
-    <label>已記錄商舖清單 (<span id="storeCount">0</span>)</label>
+    <label>已記錄商舖清單 (點擊可修改詳細資料) (<span id="storeCount">0</span>)</label>
     <div class="store-list" id="storeListContainer">
       <div style="text-align: center; color: #999; padding: 15px;">暫無店舖記錄</div>
     </div>
   </div>
 
-  <!-- 店舖資料 Modal -->
+  <!-- 店舖資料 Modal (新增/編輯 Popup) -->
   <div class="modal" id="storeModal">
     <div class="modal-content">
-      <h3 style="margin-top:0; margin-bottom: 10px;">新增店舖標記</h3>
+      <h3 style="margin-top:0; margin-bottom: 10px;" id="modalTitle">新增店舖標記</h3>
       
-      <div class="grid-2" style="margin-bottom: 12px;">
-        <button id="btnSaveStore" type="button">儲存標記</button>
-        <button id="btnCancelStore" type="button" class="danger">取消</button>
-      </div>
-
-      <div style="margin-bottom: 12px;">
-        <label>店舖相對於當前位置/方向：</label>
-        <div class="grid-3" style="margin-top: 4px;">
-          <button type="button" class="pos-btn active" id="btnSideLeft" onclick="selectSide('left')">👈 左</button>
-          <button type="button" class="pos-btn" id="btnSideCenter" onclick="selectSide('front')">🎯 前</button>
-          <button type="button" class="pos-btn" id="btnSideRight" onclick="selectSide('right')">👉 右</button>
-        </div>
+      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <button id="btnSaveStore" type="button" style="flex:1;">儲存標記</button>
+        <button id="btnDeleteStore" type="button" class="danger" style="flex:1; display:none;">🗑️ 刪除標記</button>
+        <button id="btnCancelStore" type="button" class="danger" style="flex:1; background:#8e8e93;">取消</button>
       </div>
 
       <div style="display:flex; flex-direction:column; gap:8px;">
+        <div>
+          <label>鋪號 (Shop No.) <span style="color:#007aff;">(第一圈快速填寫)</span></label>
+          <input type="text" id="inputShopNo" placeholder="例: L1-01">
+        </div>
         <div>
           <label>中文名稱</label>
           <input type="text" id="inputNameCn" placeholder="例: 喜茶">
@@ -166,10 +189,45 @@
           <label>英文名稱</label>
           <input type="text" id="inputNameEn" placeholder="例: HEYTEA">
         </div>
+
         <div>
-          <label>鋪號 (Shop No.)</label>
-          <input type="text" id="inputShopNo" placeholder="例: L1-01">
+          <label>店鋪類別</label>
+          <select id="selectCategory">
+            <option value="">-- 請選擇類別 (留空) --</option>
+            <option value="購物">購物</option>
+            <option value="餐廳">餐廳</option>
+            <option value="交通運輸">交通運輸</option>
+            <option value="美容及個人服務">美容及個人服務</option>
+            <option value="銀行及金融服務">銀行及金融服務</option>
+            <option value="旅遊">旅遊</option>
+            <option value="通訊">通訊</option>
+            <option value="地產">地產</option>
+            <option value="裝修">裝修</option>
+            <option value="教育">教育</option>
+            <option value="體育運動">體育運動</option>
+            <option value="醫療">醫療</option>
+            <option value="宗教及拜祭">宗教及拜祭</option>
+            <option value="社會服務">社會服務</option>
+            <option value="其他">其他</option>
+          </select>
         </div>
+
+        <div id="subCategoryGroup" style="display: none;">
+          <label>購物子類別</label>
+          <select id="selectSubCategory">
+            <option value="">-- 請選擇子類別 (留空) --</option>
+            <option value="食品、超市與日用品">食品、超市與日用品</option>
+            <option value="時裝、鞋包與飾品">時裝、鞋包與飾品</option>
+            <option value="美妝、母嬰與個人護理">美妝、母嬰與個人護理</option>
+            <option value="專門興趣、文化與休閒">專門興趣、文化與休閒</option>
+            <option value="運動、戶外與寵物/水族">運動、戶外與寵物/水族</option>
+            <option value="電器、電子與視聽">電器、電子與視聽</option>
+            <option value="家居、生活用品與修繕">家居、生活用品與修繕</option>
+            <option value="車輛及零件銷售">車輛及零件銷售</option>
+            <option value="其他">其他</option>
+          </select>
+        </div>
+
         <div>
           <label>備註 (Remark)</label>
           <input type="text" id="inputRemark" placeholder="例: 近扶手梯">
@@ -194,9 +252,8 @@
       
       let pathHistory = [];
       let stores = [];
-      let capturedPos = null;
-
-      let selectedSide = 'left';
+      let pendingStoreObj = null;
+      let editingStoreId = null;
 
       // 後處理參數
       let postRotationDeg = 0;
@@ -216,6 +273,19 @@
       const canvas = document.getElementById('mapCanvas');
       const ctx = canvas ? canvas.getContext('2d') : null;
 
+      const selectCategory = document.getElementById('selectCategory');
+      const selectSubCategory = document.getElementById('selectSubCategory');
+      const subCategoryGroup = document.getElementById('subCategoryGroup');
+
+      selectCategory.onchange = function() {
+        if (this.value === '購物') {
+          subCategoryGroup.style.display = 'block';
+        } else {
+          subCategoryGroup.style.display = 'none';
+          selectSubCategory.value = '';
+        }
+      };
+
       function getCurrentFloor() {
         let f = document.getElementById('floorInput').value.trim();
         return f ? f : 'G';
@@ -223,6 +293,10 @@
 
       function getCorridorOffsetDist() {
         return parseFloat(document.getElementById('corridorSizeSelect').value) || 2.0;
+      }
+
+      function getWeinbergK() {
+        return parseFloat(document.getElementById('stepKSelect').value) || 0.45;
       }
 
       function resizeCanvas() {
@@ -300,8 +374,7 @@
 
       // 2. Weinberg 動態步長演算法
       const STEP_THRESHOLD = 2.2;
-      const MIN_STEP_INTERVAL = 280; // ms
-      const WEINBERG_K = 0.45;
+      const MIN_STEP_INTERVAL = 280;
       let lastStepTime = 0;
 
       let currentStepAccMax = -Infinity;
@@ -329,8 +402,9 @@
           lastStepTime = now;
           stepCount++;
 
+          let K = getWeinbergK();
           let deltaAcc = Math.max(0.1, currentStepAccMax - currentStepAccMin);
-          let dynamicStepLength = WEINBERG_K * Math.pow(deltaAcc, 0.25);
+          let dynamicStepLength = K * Math.pow(deltaAcc, 0.25);
 
           dynamicStepLength = Math.min(Math.max(dynamicStepLength, 0.30), 1.00);
           lastStepLength = dynamicStepLength;
@@ -363,7 +437,12 @@
         document.getElementById('mallName').disabled = locked;
         document.getElementById('floorInput').disabled = locked;
         document.getElementById('corridorSizeSelect').disabled = locked;
+        document.getElementById('stepKSelect').disabled = locked;
         document.getElementById('btnGps').disabled = locked;
+
+        ['btnAddLf', 'btnAddF6', 'btnAddRf', 'btnAddL', 'btnAddC', 'btnAddR'].forEach(id => {
+          document.getElementById(id).disabled = !locked;
+        });
       }
 
       document.getElementById('btnStartPdr').onclick = async function() {
@@ -407,7 +486,6 @@
 
           btn.innerText = '⏹️ 停止 PDR 記錄';
           btn.className = 'danger';
-          document.getElementById('btnAddStore').disabled = false;
           
           pathHistory.push({ 
             floor: getCurrentFloor(), 
@@ -416,7 +494,7 @@
             timestamp: new Date().toISOString() 
           });
           resizeCanvas();
-          alert('🚀 PDR 記錄已啟動！');
+          alert('🚀 PDR 記錄已啟動！請點擊按鈕進行快抓標記。');
         } catch (err) {
           alert('感應器啟動失敗: ' + err.message);
         }
@@ -501,15 +579,13 @@
         return (180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))));
       }
 
-      // 🎯 瓦片緩衝區擴展至 11x11（dx, dy 從 -5 到 5），防大幅拉遠視角時周圍留白
       function drawOsmTiles(centerLat, centerLng, zoom, scale, toCanvasX, toCanvasY) {
         let osmZoom = 18;
         let tileX = lon2tile(centerLng, osmZoom);
         let tileY = lat2tile(centerLat, osmZoom);
 
-        // 涵蓋 -5 至 +5 區域 (11x11 瓦片矩陣)
-        for (let dx = -5; dx <= 5; dx++) {
-          for (let dy = -5; dy <= 5; dy++) {
+        for (let dx = -3; dx <= 3; dx++) {
+          for (let dy = -3; dy <= 3; dy++) {
             let tx = tileX + dx;
             let ty = tileY + dy;
             let tileKey = `${osmZoom}_${tx}_${ty}`;
@@ -626,7 +702,7 @@
         ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
       }
 
-      // 🎯 超大範圍縮放支援：最小縮放放寬至 0.01（可拉遠看清大型商場全貌）
+      // 手勢平移與縮放
       canvas.addEventListener('mousedown', (e) => {
         isDragging = true;
         startMouseX = e.clientX - panX;
@@ -646,8 +722,7 @@
         e.preventDefault();
         if (e.deltaY < 0) zoomFactor *= 1.1;
         else zoomFactor /= 1.1;
-        // 放寬 zoomFactor 下限至 0.01
-        zoomFactor = Math.min(Math.max(0.01, zoomFactor), 15.0);
+        zoomFactor = Math.min(Math.max(0.1, zoomFactor), 15.0);
         drawMap();
       }, { passive: false });
 
@@ -677,8 +752,7 @@
           );
           let factor = dist / initialPinchDist;
           zoomFactor *= factor;
-          // 雙指手勢放寬 zoomFactor 下限至 0.01
-          zoomFactor = Math.min(Math.max(0.01, zoomFactor), 15.0);
+          zoomFactor = Math.min(Math.max(0.1, zoomFactor), 15.0);
           initialPinchDist = dist;
           drawMap();
         }
@@ -689,87 +763,162 @@
         initialPinchDist = null;
       });
 
-      window.selectSide = function(side) {
-        selectedSide = side;
-        let dist = getCorridorOffsetDist();
-        document.getElementById('btnSideLeft').className = 'pos-btn' + (side === 'left' ? ' active' : '');
-        document.getElementById('btnSideCenter').className = 'pos-btn' + (side === 'front' ? ' active' : '');
-        document.getElementById('btnSideRight').className = 'pos-btn' + (side === 'right' ? ' active' : '');
-
-        document.getElementById('btnSideLeft').innerText = `👈 左 (${dist}m)`;
-        document.getElementById('btnSideCenter').innerText = `🎯 前 (${dist}m)`;
-        document.getElementById('btnSideRight').innerText = `👉 右 (${dist}m)`;
-      };
-
-      // 4. 店舖標記 Modal
+      // 點擊 6 個按鈕快抓打點
       const modal = document.getElementById('storeModal');
-      
-      document.getElementById('btnAddStore').onclick = function() {
-        capturedPos = {
-          x: currentX,
-          y: currentY,
-          heading: currentHeading
-        };
+      const btnDeleteStore = document.getElementById('btnDeleteStore');
 
-        selectSide('left');
+      window.quickAddStore = function(mode) {
+        if (!isPdrRunning) return;
 
-        document.getElementById('inputNameCn').value = '';
-        document.getElementById('inputNameEn').value = '';
-        document.getElementById('inputShopNo').value = '';
-        document.getElementById('inputRemark').value = '';
-        modal.style.display = 'flex';
-      };
+        editingStoreId = null;
+        let corridorDist = getCorridorOffsetDist();
 
-      document.getElementById('btnCancelStore').onclick = function() { modal.style.display = 'none'; };
-
-      document.getElementById('btnSaveStore').onclick = function() {
-        let nameCn = document.getElementById('inputNameCn').value.trim();
-        let nameEn = document.getElementById('inputNameEn').value.trim();
-        let shopNo = document.getElementById('inputShopNo').value.trim();
-        let remark = document.getElementById('inputRemark').value.trim();
-
-        if (!nameCn && !nameEn && !shopNo) {
-          alert('請至少輸入名稱或鋪號！');
-          return;
-        }
-
-        let storeObj = {
+        pendingStoreObj = {
           id: 'store_' + Date.now(),
           mall: document.getElementById('mallName').value,
           floor: getCurrentFloor(),
-          nameCn: nameCn,
-          nameEn: nameEn,
-          shopNo: shopNo,
-          remark: remark,
-          rawX: capturedPos ? capturedPos.x : currentX,
-          rawY: capturedPos ? capturedPos.y : currentY,
-          heading: capturedPos ? capturedPos.heading : currentHeading,
-          side: selectedSide,
-          offsetDist: getCorridorOffsetDist(),
+          nameCn: '',
+          nameEn: '',
+          shopNo: '',
+          category: '',
+          subCategory: '',
+          remark: '',
+          rawX: currentX,
+          rawY: currentY,
+          heading: currentHeading,
+          side: mode,
+          offsetDist: corridorDist,
           finalX: 0,
           finalY: 0
         };
 
-        calculateOffsetPos(storeObj);
-        stores.push(storeObj);
+        // 幾何座標計算
+        let radHeading = (currentHeading * Math.PI) / 180.0;
+        let radLeft = ((currentHeading - 90) * Math.PI) / 180.0;
+        let radRight = ((currentHeading + 90) * Math.PI) / 180.0;
+
+        let fx = currentX;
+        let fy = currentY;
+
+        if (mode === 'left') {
+          fx += corridorDist * Math.sin(radLeft);
+          fy += corridorDist * Math.cos(radLeft);
+        } else if (mode === 'right') {
+          fx += corridorDist * Math.sin(radRight);
+          fy += corridorDist * Math.cos(radRight);
+        } else if (mode === 'front') {
+          fx += corridorDist * Math.sin(radHeading);
+          fy += corridorDist * Math.cos(radHeading);
+        } else if (mode === 'left_front') {
+          fx += corridorDist * Math.sin(radLeft) + 4.0 * Math.sin(radHeading);
+          fy += corridorDist * Math.cos(radLeft) + 4.0 * Math.cos(radHeading);
+        } else if (mode === 'right_front') {
+          fx += corridorDist * Math.sin(radRight) + 4.0 * Math.sin(radHeading);
+          fy += corridorDist * Math.cos(radRight) + 4.0 * Math.cos(radHeading);
+        } else if (mode === 'front_6m') {
+          fx += 6.0 * Math.sin(radHeading);
+          fy += 6.0 * Math.cos(radHeading);
+        }
+
+        pendingStoreObj.finalX = fx;
+        pendingStoreObj.finalY = fy;
+
+        // 清空表單並彈出 Modal
+        document.getElementById('modalTitle').innerText = `新增店舖標記 [${mode.toUpperCase()}]`;
+        btnDeleteStore.style.display = 'none';
+
+        document.getElementById('inputShopNo').value = '';
+        document.getElementById('inputNameCn').value = '';
+        document.getElementById('inputNameEn').value = '';
+        selectCategory.value = '';
+        selectSubCategory.value = '';
+        subCategoryGroup.style.display = 'none';
+        document.getElementById('inputRemark').value = '';
+
+        modal.style.display = 'flex';
+      };
+
+      // 點擊清單項目進行編輯
+      window.editStore = function(storeId) {
+        let store = stores.find(s => s.id === storeId);
+        if (!store) return;
+
+        editingStoreId = storeId;
+        pendingStoreObj = null;
+
+        document.getElementById('modalTitle').innerText = `編輯店舖 [${store.shopNo || '未命名'}]`;
+        btnDeleteStore.style.display = 'block';
+
+        document.getElementById('inputShopNo').value = store.shopNo || '';
+        document.getElementById('inputNameCn').value = store.nameCn || '';
+        document.getElementById('inputNameEn').value = store.nameEn || '';
+        
+        selectCategory.value = store.category || '';
+        if (store.category === '購物') {
+          subCategoryGroup.style.display = 'block';
+          selectSubCategory.value = store.subCategory || '';
+        } else {
+          subCategoryGroup.style.display = 'none';
+          selectSubCategory.value = '';
+        }
+
+        document.getElementById('inputRemark').value = store.remark || '';
+        modal.style.display = 'flex';
+      };
+
+      // 按「刪除」按鈕
+      btnDeleteStore.onclick = function() {
+        if (!editingStoreId) return;
+        if (confirm('⚠️ 確定要刪除這個店舖標記嗎？')) {
+          stores = stores.filter(s => s.id !== editingStoreId);
+          modal.style.display = 'none';
+          drawMap();
+          renderStoreList();
+        }
+      };
+
+      // 按「取消」按鈕
+      document.getElementById('btnCancelStore').onclick = function() {
+        pendingStoreObj = null;
+        editingStoreId = null;
+        modal.style.display = 'none';
+      };
+
+      // 按「儲存」按鈕
+      document.getElementById('btnSaveStore').onclick = function() {
+        let nameCn = document.getElementById('inputNameCn').value.trim();
+        let nameEn = document.getElementById('inputNameEn').value.trim();
+        let shopNo = document.getElementById('inputShopNo').value.trim();
+        let category = selectCategory.value;
+        let subCategory = (category === '購物') ? selectSubCategory.value : '';
+        let remark = document.getElementById('inputRemark').value.trim();
+
+        if (editingStoreId) {
+          let store = stores.find(s => s.id === editingStoreId);
+          if (store) {
+            store.shopNo = shopNo;
+            store.nameCn = nameCn;
+            store.nameEn = nameEn;
+            store.category = category;
+            store.subCategory = subCategory;
+            store.remark = remark;
+          }
+        } else if (pendingStoreObj) {
+          pendingStoreObj.shopNo = shopNo;
+          pendingStoreObj.nameCn = nameCn;
+          pendingStoreObj.nameEn = nameEn;
+          pendingStoreObj.category = category;
+          pendingStoreObj.subCategory = subCategory;
+          pendingStoreObj.remark = remark;
+
+          stores.push(pendingStoreObj);
+          pendingStoreObj = null;
+        }
 
         modal.style.display = 'none';
         drawMap();
         renderStoreList();
       };
-
-      function calculateOffsetPos(store) {
-        let sideHeading = store.heading;
-        let offsetDist = store.offsetDist || 2.0;
-
-        if (store.side === 'left') sideHeading = store.heading - 90;
-        if (store.side === 'right') sideHeading = store.heading + 90;
-        if (store.side === 'front') sideHeading = store.heading;
-
-        let rad = (sideHeading * Math.PI) / 180.0;
-        store.finalX = store.rawX + offsetDist * Math.sin(rad);
-        store.finalY = store.rawY + offsetDist * Math.cos(rad);
-      }
 
       function renderStoreList() {
         const container = document.getElementById('storeListContainer');
@@ -785,15 +934,19 @@
           let adjusted = transformPoint(s.finalX, s.finalY);
           let div = document.createElement('div');
           div.className = 'store-item';
+          div.onclick = function() { editStore(s.id); };
+          
+          let catText = s.category ? (s.subCategory ? `${s.category} > ${s.subCategory}` : s.category) : '未分類';
+
           div.innerHTML = `
             <header>
-              <span>[${s.floor}] ${s.shopNo} - ${s.nameCn} (${s.nameEn})</span>
-              <span style="color:#007aff;">${s.side.toUpperCase()} (${s.offsetDist}m)</span>
+              <span>[${s.floor}] ${s.shopNo} - ${s.nameCn || '標記'} (${s.nameEn}) ✏️</span>
+              <span style="color:#007aff;">${s.side.toUpperCase()}</span>
             </header>
+            <div><strong>類別:</strong> <span style="color:#ff9500;">${catText}</span></div>
             <div><strong>備註:</strong> ${s.remark || '無'}</div>
             <div style="font-size:11px; color:#8e8e93; margin-top:2px;">
-              原始微調點 (Raw Final): (${s.finalX.toFixed(2)}m, ${s.finalY.toFixed(2)}m)<br>
-              <strong>調整後點 (Adjusted): (${adjusted.x.toFixed(2)}m, ${adjusted.y.toFixed(2)}m)</strong>
+              調整後點 (Adjusted): (${adjusted.x.toFixed(2)}m, ${adjusted.y.toFixed(2)}m)
             </div>
           `;
           container.appendChild(div);
@@ -831,25 +984,23 @@
             'Shop_No',
             'Name_CN',
             'Name_EN',
+            'Category',
+            'Sub_Category',
             'Remark',
             'Side_Offset',
             'Offset_Dist_m',
             'GPS_Start_Lat',
             'GPS_Start_Lng',
-            'Raw_Final_X_m',
-            'Raw_Final_Y_m',
-            'Adjusted_X_m',
-            'Adjusted_Y_m',
-            'Final_Lat',
-            'Final_Lng'
+            'Final_Y',
+            'Final_X'
           ].join(','));
 
           stores.forEach(s => {
             let adj = transformPoint(s.finalX, s.finalY);
-            let finalLat = '', finalLng = '';
+            let finalY = '', finalX = '';
             if (startGps.lat && startGps.lng) {
-              finalLat = (startGps.lat + (adj.y / 111000.0)).toFixed(7);
-              finalLng = (startGps.lng + (adj.x / (111000.0 * Math.cos(startGps.lat * Math.PI / 180.0)))).toFixed(7);
+              finalY = (startGps.lat + (adj.y / 111000.0)).toFixed(7);
+              finalX = (startGps.lng + (adj.x / (111000.0 * Math.cos(startGps.lat * Math.PI / 180.0)))).toFixed(7);
             }
 
             let row = [
@@ -858,17 +1009,15 @@
               `"${s.shopNo}"`,
               `"${s.nameCn}"`,
               `"${s.nameEn}"`,
+              `"${s.category || ''}"`,
+              `"${s.subCategory || ''}"`,
               `"${s.remark}"`,
               `"${s.side}"`,
               s.offsetDist || 2.0,
               startGps.lat || '',
               startGps.lng || '',
-              s.finalX.toFixed(3),
-              s.finalY.toFixed(3),
-              adj.x.toFixed(3),
-              adj.y.toFixed(3),
-              finalLat,
-              finalLng
+              finalY,
+              finalX
             ];
             csvRows.push(row.join(','));
           });
@@ -878,21 +1027,8 @@
           downloadFile(csvString, csvFileName, 'text/csv;charset=utf-8;');
         }
 
+        // 僅匯出校正後的 GPX (Adjusted GPX Only)
         if (pathHistory.length > 0) {
-          let rawTrkpts = '';
-          pathHistory.forEach(pt => {
-            let lat = startGps.lat ? (startGps.lat + (pt.y / 111000.0)).toFixed(7) : 0;
-            let lng = startGps.lng ? (startGps.lng + (pt.x / (111000.0 * Math.cos(startGps.lat * Math.PI / 180.0)))).toFixed(7) : 0;
-            rawTrkpts += `\n      <trkpt lat="${lat}" lon="${lng}"><time>${pt.timestamp}</time></trkpt>`;
-          });
-
-          let rawGpxContent = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="MallPDRMapper" xmlns="http://www.topografix.com/GPX/1/1">
-  <trk><name>${mallNameStr} ${currentFloorStr} (Raw)</name><trkseg>${rawTrkpts}\n  </trkseg></trk>
-</gpx>`;
-
-          let rawGpxFileName = `${mallNameStr}_${currentFloorStr}_track_raw_${tsStr}.gpx`;
-
           let adjTrkpts = '';
           pathHistory.forEach(pt => {
             let adjPt = transformPoint(pt.x, pt.y);
@@ -908,8 +1044,7 @@
 
           let adjGpxFileName = `${mallNameStr}_${currentFloorStr}_track_adjusted_${tsStr}.gpx`;
 
-          setTimeout(() => { downloadFile(rawGpxContent, rawGpxFileName, 'application/gpx+xml;charset=utf-8;'); }, 300);
-          setTimeout(() => { downloadFile(adjGpxContent, adjGpxFileName, 'application/gpx+xml;charset=utf-8;'); }, 600);
+          setTimeout(() => { downloadFile(adjGpxContent, adjGpxFileName, 'application/gpx+xml;charset=utf-8;'); }, 300);
         }
       };
 
