@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>Cesium LiDAR 室內走廊展示</title>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <style>
+    html, body, #cesiumContainer {
+      width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+    }
+    #toolbar {
+      position: absolute; top: 12px; left: 12px; z-index: 999;
+      background: rgba(30, 30, 30, 0.85); color: white;
+      padding: 12px 16px; border-radius: 8px; font-family: sans-serif; font-size: 14px;
+    }
+    button {
+      background: #0078d4; color: white; border: none;
+      padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-top: 8px;
+    }
+    button:hover { background: #106ebe; }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  <div id="toolbar">
+    <div><strong>LiDAR 室內走廊檢視器</strong></div>
+    <div style="font-size: 12px; color: #ccc; margin-top: 4px;">
+      左鍵旋轉 | 右鍵平移 | 滾輪縮放 | 中鍵傾斜視角
+    </div>
+    <button id="flyInsideBtn">飛入走廊內部</button>
+    <button id="toggleBuildingsBtn">切換外部建築透明度</button>
+  </div>
+
+  <script>
+    // 1. 填入你的 Cesium ion Access Token
+    Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IkZqU3ltVnAtUXJJeHJiX20iLCJqdGkiOiJjNGIzMjQ1ZS0xM2EyLTQ2NWMtYWYwOS1mYWUxOTMyZjllNmMiLCJpZCI6NTUyNjg2LCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3OTUwODIzODd9.JEBZaZMgJZBqkYtDQ3qWukrTRelSvU5slfcznBTGd2Q';
+
+    async function init() {
+      const viewer = new Cesium.Viewer('cesiumContainer', {
+        terrain: Cesium.Terrain.fromWorldTerrain(),
+        timeline: false,
+        animation: false
+      });
+
+      const scene = viewer.scene;
+
+      // 2. 室內瀏覽關鍵設定：關閉地形碰撞、縮小近裁剪距離避免靠近牆壁破圖
+      scene.screenSpaceCameraController.enableCollisionDetection = false;
+      scene.camera.frustum.near = 0.05;
+
+      // 3. 載入全球 OSM 3D 建築物作為外部空間參考（設為半透明以便透視室內）
+      const osmBuildings = await Cesium.createOsmBuildingsAsync();
+      osmBuildings.style = new Cesium.Cesium3DTileStyle({
+        color: "color('white', 0.35)" // 35% 不透明度
+      });
+      scene.primitives.add(osmBuildings);
+
+      try {
+        // 4. 載入你的 LiDAR 走廊 3D Tiles（替換為你的 Asset ID）
+        const lidarTileset = await Cesium.Cesium3DTileset.fromIonAssetId(6179670, {
+          // 提高細節層級精度，讓室內貼圖更清晰
+          maximumScreenSpaceError: 4
+        });
+        scene.primitives.add(lidarTileset);
+
+        // 飛躍至模型上方俯瞰位置
+        await viewer.zoomTo(lidarTileset, new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 25));
+
+        // 按鈕功能：直接將相機拉近到走廊中心點附近
+        document.getElementById('flyInsideBtn').onclick = () => {
+          const center = lidarTileset.boundingSphere.center;
+          viewer.camera.flyToBoundingSphere(lidarTileset.boundingSphere, {
+            offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-10), 3.0)
+          });
+        };
+
+        // 按鈕功能：切換外部建築半透明 / 隱藏
+        let isTransparent = true;
+        document.getElementById('toggleBuildingsBtn').onclick = () => {
+          isTransparent = !isTransparent;
+          osmBuildings.style = new Cesium.Cesium3DTileStyle({
+            color: isTransparent ? "color('white', 0.35)" : "color('white', 0.0)"
+          });
+        };
+
+      } catch (error) {
+        console.error('載入 LiDAR 模型失敗:', error);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
