@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>Cesium LiDAR 室內走廊展示</title>
+  <title>Cesium 多模型 LiDAR 室內展示</title>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
   <style>
@@ -11,30 +11,70 @@
     }
     #toolbar {
       position: absolute; top: 12px; left: 12px; z-index: 999;
-      background: rgba(30, 30, 30, 0.85); color: white;
-      padding: 12px 16px; border-radius: 8px; font-family: sans-serif; font-size: 14px;
+      background: rgba(25, 25, 25, 0.9); color: white;
+      padding: 14px 16px; border-radius: 8px; font-family: sans-serif; font-size: 14px;
+      width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    .btn-group {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
     }
     button {
       background: #0078d4; color: white; border: none;
-      padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-top: 8px;
+      padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 13px;
     }
     button:hover { background: #106ebe; }
+    button.secondary { background: #444; }
+    button.secondary:hover { background: #555; }
+    
+    #modelList {
+      margin-top: 12px; padding-top: 10px; border-top: 1px solid #444;
+    }
+    .model-item {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px; background: rgba(255,255,255,0.06);
+      padding: 6px 8px; border-radius: 4px;
+    }
+    .model-item label {
+      display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;
+    }
+    .fly-mini-btn {
+      padding: 3px 8px; font-size: 12px; background: #2b88d8;
+    }
   </style>
 </head>
 <body>
   <div id="cesiumContainer"></div>
   <div id="toolbar">
-    <div><strong>LiDAR 室內走廊檢視器</strong></div>
-    <div style="font-size: 12px; color: #ccc; margin-top: 4px;">
-      左鍵旋轉 | 右鍵平移 | 滾輪縮放 | 中鍵傾斜視角
+    <div><strong>LiDAR 室內走廊多模型檢視器</strong></div>
+    <div style="font-size: 12px; color: #bbb; margin-top: 4px;">
+      左鍵旋轉 | 右鍵平移 | 滾輪縮放 | 中鍵傾斜
     </div>
-    <button id="flyInsideBtn">飛入走廊內部</button>
-    <button id="toggleBuildingsBtn">切換外部建築透明度</button>
+
+    <div class="btn-group">
+      <button id="topViewBtn">一鍵俯視角 (Top View)</button>
+      <button id="flyInsideBtn">飛入走廊內部</button>
+      <button id="toggleBuildingsBtn" class="secondary">切換外部建築透明度</button>
+    </div>
+
+    <div id="modelList">
+      <div style="font-size: 12px; color: #aaa; margin-bottom: 8px;">模型圖層控制（勾選顯示 / 點擊定位）：</div>
+      <!-- JavaScript 會自動在此生成清單 -->
+    </div>
   </div>
 
   <script>
     // 1. 填入你的 Cesium ion Access Token
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IkZqU3ltVnAtUXJJeHJiX20iLCJqdGkiOiJjNGIzMjQ1ZS0xM2EyLTQ2NWMtYWYwOS1mYWUxOTMyZjllNmMiLCJpZCI6NTUyNjg2LCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3OTUwODIzODd9.JEBZaZMgJZBqkYtDQ3qWukrTRelSvU5slfcznBTGd2Q';
+
+    // ==========================================
+    // 【簡易模型清單】在此自由增減模型與 Asset ID
+    // ==========================================
+    const MODELS_CONFIG = [
+      { name: '走廊樓層2', assetId: 6183954, show: true },
+	  { name: '走廊樓層1', assetId: 6179670, show: true }
+      // { name: '走廊區塊 B (轉角)', assetId: 1234567, show: true },
+      // { name: '電梯大堂', assetId: 7654321, show: false }
+    ];
 
     async function init() {
       const viewer = new Cesium.Viewer('cesiumContainer', {
@@ -49,44 +89,99 @@
       scene.screenSpaceCameraController.enableCollisionDetection = false;
       scene.camera.frustum.near = 0.05;
 
-      // 3. 載入全球 OSM 3D 建築物作為外部空間參考（設為半透明以便透視室內）
+      // 3. 載入全球 OSM 3D 建築物作為外部空間參考
       const osmBuildings = await Cesium.createOsmBuildingsAsync();
       osmBuildings.style = new Cesium.Cesium3DTileStyle({
-        color: "color('white', 0.35)" // 35% 不透明度
+        color: "color('white', 0.35)"
       });
       scene.primitives.add(osmBuildings);
 
-      try {
-        // 4. 載入你的 LiDAR 走廊 3D Tiles（替換為你的 Asset ID）
-        const lidarTileset = await Cesium.Cesium3DTileset.fromIonAssetId(6179670, {
-          // 提高細節層級精度，讓室內貼圖更清晰
-          maximumScreenSpaceError: 4
-        });
-        scene.primitives.add(lidarTileset);
+      // 4. 依序載入清單中的所有 LiDAR 3D Tiles 模型
+      const loadedTilesets = [];
+      const modelListContainer = document.getElementById('modelList');
+      let activeTileset = null; // 記錄目前主要對焦的模型
 
-        // 飛躍至模型上方俯瞰位置
-        await viewer.zoomTo(lidarTileset, new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 25));
-
-        // 按鈕功能：直接將相機拉近到走廊中心點附近
-        document.getElementById('flyInsideBtn').onclick = () => {
-          const center = lidarTileset.boundingSphere.center;
-          viewer.camera.flyToBoundingSphere(lidarTileset.boundingSphere, {
-            offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-10), 3.0)
+      for (const item of MODELS_CONFIG) {
+        try {
+          const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(item.assetId, {
+            maximumScreenSpaceError: 4
           });
-        };
+          tileset.show = item.show;
+          scene.primitives.add(tileset);
+          loadedTilesets.push(tileset);
 
-        // 按鈕功能：切換外部建築半透明 / 隱藏
-        let isTransparent = true;
-        document.getElementById('toggleBuildingsBtn').onclick = () => {
-          isTransparent = !isTransparent;
-          osmBuildings.style = new Cesium.Cesium3DTileStyle({
-            color: isTransparent ? "color('white', 0.35)" : "color('white', 0.0)"
-          });
-        };
+          if (!activeTileset) activeTileset = tileset;
 
-      } catch (error) {
-        console.error('載入 LiDAR 模型失敗:', error);
+          //動態建立 UI 控制列 (Checkbox + 飛躍按鈕)
+          const row = document.createElement('div');
+          row.className = 'model-item';
+
+          const label = document.createElement('label');
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = item.show;
+          checkbox.onchange = (e) => {
+            tileset.show = e.target.checked;
+          };
+
+          const span = document.createElement('span');
+          span.textContent = item.name;
+
+          label.appendChild(checkbox);
+          label.appendChild(span);
+
+          const flyBtn = document.createElement('button');
+          flyBtn.className = 'fly-mini-btn';
+          flyBtn.textContent = '定位';
+          flyBtn.onclick = () => {
+            activeTileset = tileset;
+            viewer.camera.flyToBoundingSphere(tileset.boundingSphere, {
+              offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 20)
+            });
+          };
+
+          row.appendChild(label);
+          row.appendChild(flyBtn);
+          modelListContainer.appendChild(row);
+
+        } catch (error) {
+          console.error(`載入模型 "${item.name}" (ID: ${item.assetId}) 失敗:`, error);
+        }
       }
+
+      // 初始飛躍至第一個載入成功的模型
+      if (activeTileset) {
+        await viewer.zoomTo(activeTileset, new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 25));
+      }
+
+      // 按鈕功能 1：一鍵俯視角 (Top View，正上方 90 度垂直向下)
+      document.getElementById('topViewBtn').onclick = () => {
+        if (!activeTileset) return;
+        viewer.camera.flyToBoundingSphere(activeTileset.boundingSphere, {
+          offset: new Cesium.HeadingPitchRange(
+            0, 
+            Cesium.Math.toRadians(-90), // -90 度即為正上方垂直俯視
+            Math.max(activeTileset.boundingSphere.radius * 2.5, 25)
+          )
+        });
+      };
+
+      // 按鈕功能 2：飛入目前選取模型的內部
+      document.getElementById('flyInsideBtn').onclick = () => {
+        if (!activeTileset) return;
+        viewer.camera.flyToBoundingSphere(activeTileset.boundingSphere, {
+          offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-10), 3.0)
+        });
+      };
+
+      // 按鈕功能 3：切換外部建築半透明 / 隱藏
+      let isTransparent = true;
+      document.getElementById('toggleBuildingsBtn').onclick = () => {
+        isTransparent = !isTransparent;
+        osmBuildings.style = new Cesium.Cesium3DTileStyle({
+          color: isTransparent ? "color('white', 0.35)" : "color('white', 0.0)"
+        });
+      };
     }
 
     init();
