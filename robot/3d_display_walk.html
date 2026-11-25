@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>Cesium LiDAR 室內走廊（人眼漫遊與中心視察版）</title>
+  <title>Cesium LiDAR 室內走廊（多樓層 Robot 即時監控版）</title>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
   <style>
@@ -13,7 +13,8 @@
       position: absolute; top: 12px; left: 12px; z-index: 999;
       background: rgba(25, 25, 25, 0.92); color: white;
       padding: 14px 16px; border-radius: 8px; font-family: sans-serif; font-size: 13px;
-      width: 315px; box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+      width: 325px; box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+      max-height: 92vh; overflow-y: auto;
     }
     .mode-switch {
       display: flex; gap: 6px; margin: 10px 0; background: #111; padding: 4px; border-radius: 6px;
@@ -37,7 +38,7 @@
       background: rgba(0, 120, 212, 0.15); border-left: 3px solid #0078d4;
       padding: 8px 10px; margin-top: 8px; font-size: 12px; line-height: 1.5; color: #ddd;
     }
-    #modelList {
+    .section-block {
       margin-top: 12px; padding-top: 10px; border-top: 1px solid #444;
     }
     .model-item {
@@ -49,8 +50,10 @@
       display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;
     }
     .fly-mini-btn {
-      padding: 3px 8px; font-size: 11px; background: #2b88d8; border: none; color: white; border-radius: 3px; cursor: pointer;
+      padding: 3px 8px; font-size: 11px; background: #2b88d8; border: none; color: white; border-radius: 3px; cursor: pointer; margin-left: 4px;
     }
+    .fly-mini-btn.follow { background: #107c10; }
+    .coord-text { font-family: monospace; font-size: 11px; color: #4fc3f7; display: block; }
   </style>
 </head>
 <body>
@@ -77,8 +80,22 @@
       <button id="toggleBuildingsBtn" class="action-btn">外部建築透明度</button>
     </div>
 
-    <div id="modelList">
-      <div style="font-size: 12px; color: #aaa; margin-bottom: 6px;">模型圖層控制：</div>
+    <!-- 樓層圖層控制 -->
+    <div class="section-block" id="modelList">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <span style="font-size: 12px; color: #aaa; font-weight:bold;">樓層圖層控制：</span>
+        <label style="font-size:11px; color:#8ce99a; cursor:pointer; display:flex; align-items:center; gap:4px;">
+          <input type="checkbox" id="autoSwitchFloorChk"> 隨 Robot 自動切樓層
+        </label>
+      </div>
+    </div>
+
+    <!-- Robot 即時監控清單 -->
+    <div class="section-block">
+      <div style="font-size: 12px; color: #aaa; margin-bottom: 6px; font-weight:bold;">Robot 即時位置 (依樓層對齊 Z 軸)：</div>
+      <div id="robotList">
+        <div style="font-size:11px; color:#777;">等待 AutoXing API / 模擬器推播數據...</div>
+      </div>
     </div>
   </div>
 
@@ -86,15 +103,22 @@
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IkZqU3ltVnAtUXJJeHJiX20iLCJqdGkiOiJjNGIzMjQ1ZS0xM2EyLTQ2NWMtYWYwOS1mYWUxOTMyZjllNmMiLCJpZCI6NTUyNjg2LCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3OTUwODIzODd9.JEBZaZMgJZBqkYtDQ3qWukrTRelSvU5slfcznBTGd2Q';
 
     // ==========================================
-    // 【簡易模型清單】在此自由增減模型與 Asset ID
+    // 【簡易模型清單】在此自由增減樓層模型與 Asset ID
     // ==========================================
     const MODELS_CONFIG = [
-      { name: '走廊樓層1', assetId: 6184026, show: true },
-	  { name: '走廊樓層2', assetId: 6183954, show: true },
-	  { name: '走廊樓層3', assetId: 6179670, show: true }
-      // { name: '走廊區塊 B (轉角)', assetId: 1234567, show: true },
-      // { name: '電梯大堂', assetId: 7654321, show: false }
+      { name: '13/f', assetId: 6184026, show: true },
+      { name: '12/f', assetId: 6183954, show: true },
+      { name: '11/f', assetId: 6179670, show: true }
     ];
+
+    const ROBOT_HEIGHT = 0.7; // 機器人高度 (公尺)，用來計算貼地 Z 軸中心點
+
+    // 工具函式：從 '13/f' 或 13 中萃取出標準樓層數字 (例如 13)
+    function extractFloorNumber(floorInput) {
+      if (floorInput === undefined || floorInput === null) return null;
+      const match = String(floorInput).match(/-?\d+/);
+      return match ? parseInt(match[0], 10) : null;
+    }
 
     async function init() {
       const viewer = new Cesium.Viewer('cesiumContainer', {
@@ -110,10 +134,10 @@
       const controller = scene.screenSpaceCameraController;
 
       // 1. 解除室內導航的各種地球尺度限制
-      controller.enableCollisionDetection = false; // 允許穿牆/進入室內
-      controller.minimumZoomDistance = 0.1;        // 允許極近距離縮放 (10cm)
+      controller.enableCollisionDetection = false;
+      controller.minimumZoomDistance = 0.1;
       controller.maximumZoomDistance = 5000;
-      camera.frustum.near = 0.05;                  // 避免靠近牆壁破圖
+      camera.frustum.near = 0.05;
 
       // 載入半透明 OSM 3D 建築物
       const osmBuildings = await Cesium.createOsmBuildingsAsync();
@@ -122,9 +146,20 @@
       });
       scene.primitives.add(osmBuildings);
 
-      // 2. 載入所有模型
+      // 2. 載入所有樓層模型並建立樓層索引表 (floorMap)
       const modelListContainer = document.getElementById('modelList');
+      const floorMap = {}; // key: 樓層數字 (例如 13), value: { config, tileset, enuMatrix, floorHeightCache, checkboxEl }
+      const robots = {};   // 儲存所有機器人狀態
       let activeTileset = null;
+
+      // 同步更新指定樓層所有 Robot 的顯示狀態
+      function syncRobotsVisibilityForFloor(floorNum, isVisible) {
+        Object.values(robots).forEach(r => {
+          if (r.floorNum === floorNum) {
+            r.entity.show = isVisible;
+          }
+        });
+      }
 
       for (const item of MODELS_CONFIG) {
         try {
@@ -135,6 +170,10 @@
           scene.primitives.add(tileset);
           if (!activeTileset) activeTileset = tileset;
 
+          const floorNum = extractFloorNumber(item.name);
+          const center = tileset.boundingSphere.center.clone();
+          const enuMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(center);
+
           const row = document.createElement('div');
           row.className = 'model-item';
           row.innerHTML = `
@@ -144,14 +183,34 @@
             </label>
             <button class="fly-mini-btn">定位</button>
           `;
-          row.querySelector('input').onchange = (e) => { tileset.show = e.target.checked; };
+
+          const checkboxEl = row.querySelector('input');
+          checkboxEl.onchange = (e) => {
+            const checked = e.target.checked;
+            tileset.show = checked;
+            if (floorNum !== null) {
+              syncRobotsVisibilityForFloor(floorNum, checked);
+            }
+          };
+
           row.querySelector('button').onclick = () => {
             activeTileset = tileset;
+            viewer.trackedEntity = undefined;
             viewer.camera.flyToBoundingSphere(tileset.boundingSphere, {
               offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 15)
             });
           };
           modelListContainer.appendChild(row);
+
+          if (floorNum !== null) {
+            floorMap[floorNum] = {
+              config: item,
+              tileset: tileset,
+              enuMatrix: enuMatrix,
+              floorHeightCache: null,
+              checkboxEl: checkboxEl
+            };
+          }
         } catch (error) {
           console.error(`載入模型 "${item.name}" 失敗:`, error);
         }
@@ -162,6 +221,185 @@
       }
 
       // ==========================================
+      // 3. 依樓層取得真實地板 Z 高度並計算世界坐標
+      // ==========================================
+      async function getFloorGroundedPosition(floorData, localX, localY) {
+        // 先以該樓層模型的 ENU 矩陣算出水平位置
+        const rawWorldPos = Cesium.Matrix4.multiplyByPoint(
+          floorData.enuMatrix,
+          new Cesium.Cartesian3(localX, localY, 0),
+          new Cesium.Cartesian3()
+        );
+        const cartographic = Cesium.Cartographic.fromCartesian(rawWorldPos);
+
+        // 若該樓層目前是顯示狀態，嘗試用 sampleHeightMostDetailed 取得該點正下方的 LiDAR 地板 Z 高度
+        if (floorData.tileset.show) {
+          try {
+            // 排除其他樓層模型與外部建築，只採樣目標樓層的地板高度
+            const otherPrimitives = [osmBuildings];
+            Object.values(floorMap).forEach(f => {
+              if (f.tileset !== floorData.tileset) otherPrimitives.push(f.tileset);
+            });
+
+            const sampled = await scene.sampleHeightMostDetailed([cartographic], otherPrimitives);
+            if (sampled && sampled[0] && Cesium.defined(sampled[0].height)) {
+              floorData.floorHeightCache = sampled[0].height;
+              cartographic.height = sampled[0].height + (ROBOT_HEIGHT / 2);
+              return Cesium.Cartographic.toCartesian(cartographic);
+            }
+          } catch (e) {
+            // 採樣失敗時使用下方的快取或模型中心高度推算
+          }
+        }
+
+        // 若樓層隱藏或尚未載入精細瓦片，使用已快取的該樓層地板高度，或以該樓層 boundingSphere 中心高度推算
+        if (floorData.floorHeightCache !== null) {
+          cartographic.height = floorData.floorHeightCache + (ROBOT_HEIGHT / 2);
+        } else {
+          const centerCarto = Cesium.Cartographic.fromCartesian(floorData.tileset.boundingSphere.center);
+          cartographic.height = centerCarto.height - 1.2 + (ROBOT_HEIGHT / 2);
+        }
+        return Cesium.Cartographic.toCartesian(cartographic);
+      }
+
+      // ==========================================
+      // 4. AutoXing Robot 即時更新接口 (依 floor 匹配樓層)
+      // ==========================================
+      const robotListContainer = document.getElementById('robotList');
+
+      window.updateAutoXingRobot = async function(axData) {
+        const floorNum = extractFloorNumber(axData.floor);
+        const floorData = floorMap[floorNum];
+
+        if (!floorData) {
+          console.warn(`找不到對應樓層 (${axData.floor}) 的模型設定，請確認 MODELS_CONFIG 是否包含該樓層。`);
+          return;
+        }
+
+        // 若開啟「隨 Robot 自動切樓層」，自動顯示該樓層並隱藏其他樓層
+        if (document.getElementById('autoSwitchFloorChk').checked) {
+          Object.entries(floorMap).forEach(([fKey, fObj]) => {
+            const shouldShow = (Number(fKey) === floorNum);
+            if (fObj.tileset.show !== shouldShow) {
+              fObj.tileset.show = shouldShow;
+              fObj.checkboxEl.checked = shouldShow;
+              syncRobotsVisibilityForFloor(Number(fKey), shouldShow);
+            }
+          });
+        }
+
+        const x = axData.pose.x;
+        const y = axData.pose.y;
+        const yawDeg = Cesium.Math.toDegrees(axData.pose.yaw || 0);
+
+        // 取得該樓層對應的真實 Z 高度貼地世界坐標
+        const worldPos = await getFloorGroundedPosition(floorData, x, y);
+        const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(yawDeg), 0, 0);
+        const orientation = Cesium.Transforms.headingPitchRollQuaternion(worldPos, hpr);
+
+        const id = axData.robotId;
+        const isFloorVisible = floorData.tileset.show;
+        const batteryStr = axData.battery !== undefined ? ` [${axData.battery}%]` : '';
+
+        if (!robots[id]) {
+          // 清除初始提示字樣
+          if (Object.keys(robots).length === 0) robotListContainer.innerHTML = '';
+
+          const trailPositions = [worldPos];
+          const entity = viewer.entities.add({
+            id: id,
+            name: id,
+            show: isFloorVisible, // 初始顯示狀態跟隨所屬樓層
+            position: worldPos,
+            orientation: orientation,
+            cylinder: {
+              length: ROBOT_HEIGHT,
+              topRadius: 0.32,
+              bottomRadius: 0.35,
+              material: Cesium.Color.CYAN.withAlpha(0.95),
+              outline: true,
+              outlineColor: Cesium.Color.WHITE
+            },
+            label: {
+              text: `${id}${batteryStr}\n${floorData.config.name} (${x.toFixed(1)}, ${y.toFixed(1)})`,
+              font: '12px sans-serif',
+              fillColor: Cesium.Color.WHITE,
+              outlineColor: Cesium.Color.BLACK,
+              outlineWidth: 2,
+              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+              pixelOffset: new Cesium.Cartesian2(0, -34),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY
+            },
+            polyline: {
+              positions: new Cesium.CallbackProperty(() => trailPositions, false),
+              width: 3,
+              material: Cesium.Color.CYAN.withAlpha(0.7)
+            }
+          });
+
+          const row = document.createElement('div');
+          row.className = 'model-item';
+          row.innerHTML = `
+            <div>
+              <strong>${id}</strong> <span style="color:#8ce99a; font-size:11px;" id="flr-${id}">[${floorData.config.name}]</span>
+              <span class="coord-text" id="coord-${id}">X:${x.toFixed(2)} Y:${y.toFixed(2)}</span>
+            </div>
+            <div>
+              <button class="fly-mini-btn" id="fly-${id}">定位</button>
+              <button class="fly-mini-btn follow" id="follow-${id}">跟隨</button>
+            </div>
+          `;
+          robotListContainer.appendChild(row);
+
+          document.getElementById(`fly-${id}`).onclick = () => {
+            // 點擊定位時，若該樓層被隱藏則自動打開顯示
+            if (!floorData.tileset.show) {
+              floorData.tileset.show = true;
+              floorData.checkboxEl.checked = true;
+              syncRobotsVisibilityForFloor(floorNum, true);
+            }
+            viewer.trackedEntity = undefined;
+            viewer.flyTo(entity, { offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-30), 5) });
+          };
+
+          document.getElementById(`follow-${id}`).onclick = () => {
+            setNavigationMode(false);
+            viewer.trackedEntity = entity;
+          };
+
+          robots[id] = { entity, trailPositions, floorNum };
+        } else {
+          const r = robots[id];
+          // 若機器人跨樓層移動，清空上一樓層的軌跡線避免垂直拉絲
+          if (r.floorNum !== floorNum) {
+            r.trailPositions.length = 0;
+            r.floorNum = floorNum;
+          }
+
+          r.entity.show = isFloorVisible;
+          r.entity.position = worldPos;
+          r.entity.orientation = orientation;
+          r.entity.label.text = `${id}${batteryStr}\n${floorData.config.name} (${x.toFixed(1)}, ${y.toFixed(1)})`;
+
+          r.trailPositions.push(worldPos);
+          if (r.trailPositions.length > 120) r.trailPositions.shift();
+
+          const coordEl = document.getElementById(`coord-${id}`);
+          const flrEl = document.getElementById(`flr-${id}`);
+          if (coordEl) coordEl.innerText = `X:${x.toFixed(2)} Y:${y.toFixed(2)}`;
+          if (flrEl) flrEl.innerText = `[${floorData.config.name}]`;
+        }
+      };
+
+      // ==========================================
+      // 5. 監聽來自 Route Studio 的跨分頁模擬 AutoXing API 推播
+      // ==========================================
+      const mockChannel = new BroadcastChannel('autoxing_mock_telemetry');
+      mockChannel.onmessage = (event) => {
+        window.updateAutoXingRobot(event.data);
+      };
+
+      // ==========================================
       // 功能 A：雙擊滑鼠左鍵，以點擊的點為中心進行環繞視察
       // ==========================================
       let pivotMarker = null;
@@ -169,17 +407,15 @@
 
       handler.setInputAction((movement) => {
         if (isFpvMode) return;
-        // 拾取點擊位置的 3D 模型表面座標
+        viewer.trackedEntity = undefined;
         const pickedPosition = scene.pickPosition(movement.position);
         if (Cesium.defined(pickedPosition)) {
-          // 顯示一個短暫的綠色小光點提示新的旋轉中心
           if (pivotMarker) viewer.entities.remove(pivotMarker);
           pivotMarker = viewer.entities.add({
             position: pickedPosition,
             point: { pixelSize: 10, color: Cesium.Color.LIME, outlineColor: Cesium.Color.BLACK, outlineWidth: 2 }
           });
 
-          // 將相機對準該點，並保持在距離 3.5 公尺處方便四周視察
           const boundingSphere = new Cesium.BoundingSphere(pickedPosition, 1.0);
           camera.flyToBoundingSphere(boundingSphere, {
             duration: 0.8,
@@ -195,13 +431,12 @@
       const flags = { moveForward: false, moveBackward: false, moveLeft: false, moveRight: false, moveUp: false, moveDown: false, look: false };
       let startMousePosition, mousePosition;
 
-      // 切換「中心環繞模式」與「人眼第一人稱模式」
       function setNavigationMode(fpv) {
         isFpvMode = fpv;
+        if (fpv) viewer.trackedEntity = undefined;
         document.getElementById('orbitModeBtn').classList.toggle('active', !fpv);
         document.getElementById('fpvModeBtn').classList.toggle('active', fpv);
 
-        // 停用/啟用 Cesium 預設滑鼠控制
         controller.enableRotate = !fpv;
         controller.enableTranslate = !fpv;
         controller.enableZoom = !fpv;
@@ -210,7 +445,6 @@
 
         if (fpv) {
           if (pivotMarker) viewer.entities.remove(pivotMarker);
-          // 將相機水平拉平，進入人眼平視角度
           camera.setView({
             orientation: { heading: camera.heading, pitch: 0.0, roll: 0.0 }
           });
@@ -233,7 +467,6 @@
       document.getElementById('orbitModeBtn').onclick = () => setNavigationMode(false);
       document.getElementById('fpvModeBtn').onclick = () => setNavigationMode(true);
 
-      // 第一人稱滑鼠原地轉頭控制
       handler.setInputAction((movement) => {
         if (!isFpvMode) return;
         flags.look = true;
@@ -247,7 +480,6 @@
 
       handler.setInputAction(() => { flags.look = false; }, Cesium.ScreenSpaceEventType.LEFT_UP);
 
-      // 鍵盤 WASD 監聽
       document.addEventListener('keydown', (e) => {
         if (!isFpvMode) return;
         switch (e.code) {
@@ -271,11 +503,9 @@
         }
       });
 
-      // 每幀更新第一人稱移動與轉向（速度設為適合步行的 0.08 公尺/幀）
       viewer.clock.onTick.addEventListener(() => {
         if (!isFpvMode) return;
 
-        // 1. 滑鼠原地轉頭（保持 Roll = 0 避免畫面歪斜）
         if (flags.look) {
           const width = scene.canvas.clientWidth;
           const height = scene.canvas.clientHeight;
@@ -294,10 +524,7 @@
           });
         }
 
-        // 2. 水平方向前後左右步行移動（確保按 W 時不會因為低頭而鑽進地板）
         const walkSpeed = 0.08;
-        const forwardDir = new Cesium.Cartesian3();
-        // 取得水平朝向向量
         const transform = Cesium.Transforms.eastNorthUpToFixedFrame(camera.positionWC);
         const h = camera.heading;
         const localForward = new Cesium.Cartesian3(Math.sin(h), Math.cos(h), 0);
@@ -319,16 +546,16 @@
       // ==========================================
       document.getElementById('topViewBtn').onclick = () => {
         setNavigationMode(false);
+        viewer.trackedEntity = undefined;
         if (!activeTileset) return;
         viewer.camera.flyToBoundingSphere(activeTileset.boundingSphere, {
           offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-90), Math.max(activeTileset.boundingSphere.radius * 2.5, 25))
         });
       };
 
-      // 切換人眼高度：直接飛進走廊並自動進入第一人稱模式
       document.getElementById('eyeLevelBtn').onclick = () => {
         if (!activeTileset) return;
-        const center = activeTileset.boundingSphere.center;
+        viewer.trackedEntity = undefined;
         camera.flyToBoundingSphere(activeTileset.boundingSphere, {
           duration: 1.0,
           offset: new Cesium.HeadingPitchRange(0, 0, 1.5),
