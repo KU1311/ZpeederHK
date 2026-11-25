@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>Cesium LiDAR 室內走廊（多樓層 Robot 即時監控版）</title>
+  <title>Cesium LiDAR 室內走廊（多樓層 Robot 與 JSON 路徑版）</title>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
   <style>
@@ -13,7 +13,7 @@
       position: absolute; top: 12px; left: 12px; z-index: 999;
       background: rgba(25, 25, 25, 0.92); color: white;
       padding: 14px 16px; border-radius: 8px; font-family: sans-serif; font-size: 13px;
-      width: 325px; box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+      width: 330px; box-shadow: 0 4px 14px rgba(0,0,0,0.45);
       max-height: 92vh; overflow-y: auto;
     }
     .mode-switch {
@@ -23,9 +23,7 @@
       flex: 1; padding: 7px 6px; border: none; border-radius: 4px; cursor: pointer;
       font-size: 12px; font-weight: bold; background: transparent; color: #aaa;
     }
-    .mode-btn.active {
-      background: #0078d4; color: white;
-    }
+    .mode-btn.active { background: #0078d4; color: white; }
     .btn-group {
       display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
     }
@@ -90,11 +88,16 @@
       </div>
     </div>
 
-    <!-- Robot 即時監控清單 -->
+    <!-- Robot 即時監控與 JSON 匯入清單 -->
     <div class="section-block">
-      <div style="font-size: 12px; color: #aaa; margin-bottom: 6px; font-weight:bold;">Robot 即時位置 (依樓層對齊 Z 軸)：</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <span style="font-size: 12px; color: #aaa; font-weight:bold;">Robot 軌跡與即時位置：</span>
+        <!-- 支援手動選擇任意資料夾的 JSON 檔 -->
+        <button id="importJsonBtn" class="fly-mini-btn" style="background:#d83b01;">+ 匯入 JSON 路徑</button>
+        <input type="file" id="jsonFileInput" accept=".json" multiple style="display:none;">
+      </div>
       <div id="robotList">
-        <div style="font-size:11px; color:#777;">等待 AutoXing API / 模擬器推播數據...</div>
+        <div style="font-size:11px; color:#777;">尚未載入路徑，請點擊上方「+ 匯入 JSON 路徑」或設定同資料夾自動載入...</div>
       </div>
     </div>
   </div>
@@ -103,7 +106,7 @@
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IkZqU3ltVnAtUXJJeHJiX20iLCJqdGkiOiJjNGIzMjQ1ZS0xM2EyLTQ2NWMtYWYwOS1mYWUxOTMyZjllNmMiLCJpZCI6NTUyNjg2LCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3OTUwODIzODd9.JEBZaZMgJZBqkYtDQ3qWukrTRelSvU5slfcznBTGd2Q';
 
     // ==========================================
-    // 【簡易模型清單】在此自由增減樓層模型與 Asset ID
+    // 1. 【樓層模型清單】
     // ==========================================
     const MODELS_CONFIG = [
       { name: '13/f', assetId: 6184026, show: true },
@@ -111,9 +114,17 @@
       { name: '11/f', assetId: 6179670, show: true }
     ];
 
-    const ROBOT_HEIGHT = 0.7; // 機器人高度 (公尺)，用來計算貼地 Z 軸中心點
+    // ==========================================
+    // 2. 【同資料夾自動載入的 JSON 路徑清單】
+    // 將 route-studio 下載的 .json 放在與此 HTML 同一資料夾，並把檔名填入下方陣列：
+    // ==========================================
+    const AUTO_LOAD_ROUTE_FILES = [
+      // './route_13f.json',
+      // './route_12f.json',
+    ];
 
-    // 工具函式：從 '13/f' 或 13 中萃取出標準樓層數字 (例如 13)
+    const ROBOT_HEIGHT = 0.7;
+
     function extractFloorNumber(floorInput) {
       if (floorInput === undefined || floorInput === null) return null;
       const match = String(floorInput).match(/-?\d+/);
@@ -133,31 +144,30 @@
       const camera = viewer.camera;
       const controller = scene.screenSpaceCameraController;
 
-      // 1. 解除室內導航的各種地球尺度限制
       controller.enableCollisionDetection = false;
       controller.minimumZoomDistance = 0.1;
       controller.maximumZoomDistance = 5000;
       camera.frustum.near = 0.05;
 
-      // 載入半透明 OSM 3D 建築物
       const osmBuildings = await Cesium.createOsmBuildingsAsync();
       osmBuildings.style = new Cesium.Cesium3DTileStyle({
         color: "color('white', 0.35)"
       });
       scene.primitives.add(osmBuildings);
 
-      // 2. 載入所有樓層模型並建立樓層索引表 (floorMap)
       const modelListContainer = document.getElementById('modelList');
-      const floorMap = {}; // key: 樓層數字 (例如 13), value: { config, tileset, enuMatrix, floorHeightCache, checkboxEl }
-      const robots = {};   // 儲存所有機器人狀態
+      const floorMap = {};
+      const robots = {};
+      const routeEntities = []; // 儲存畫在地圖上的預設路徑線
+      const activeSimulators = []; // 儲存從 JSON 啟動的路徑模擬器
       let activeTileset = null;
 
-      // 同步更新指定樓層所有 Robot 的顯示狀態
       function syncRobotsVisibilityForFloor(floorNum, isVisible) {
         Object.values(robots).forEach(r => {
-          if (r.floorNum === floorNum) {
-            r.entity.show = isVisible;
-          }
+          if (r.floorNum === floorNum) r.entity.show = isVisible;
+        });
+        routeEntities.forEach(item => {
+          if (item.floorNum === floorNum) item.entity.show = isVisible;
         });
       }
 
@@ -188,9 +198,7 @@
           checkboxEl.onchange = (e) => {
             const checked = e.target.checked;
             tileset.show = checked;
-            if (floorNum !== null) {
-              syncRobotsVisibilityForFloor(floorNum, checked);
-            }
+            if (floorNum !== null) syncRobotsVisibilityForFloor(floorNum, checked);
           };
 
           row.querySelector('button').onclick = () => {
@@ -220,11 +228,8 @@
         await viewer.zoomTo(activeTileset, new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 20));
       }
 
-      // ==========================================
-      // 3. 依樓層取得真實地板 Z 高度並計算世界坐標
-      // ==========================================
+      // 取得該樓層貼地 Z 高度世界坐標
       async function getFloorGroundedPosition(floorData, localX, localY) {
-        // 先以該樓層模型的 ENU 矩陣算出水平位置
         const rawWorldPos = Cesium.Matrix4.multiplyByPoint(
           floorData.enuMatrix,
           new Cesium.Cartesian3(localX, localY, 0),
@@ -232,27 +237,21 @@
         );
         const cartographic = Cesium.Cartographic.fromCartesian(rawWorldPos);
 
-        // 若該樓層目前是顯示狀態，嘗試用 sampleHeightMostDetailed 取得該點正下方的 LiDAR 地板 Z 高度
         if (floorData.tileset.show) {
           try {
-            // 排除其他樓層模型與外部建築，只採樣目標樓層的地板高度
             const otherPrimitives = [osmBuildings];
             Object.values(floorMap).forEach(f => {
               if (f.tileset !== floorData.tileset) otherPrimitives.push(f.tileset);
             });
-
             const sampled = await scene.sampleHeightMostDetailed([cartographic], otherPrimitives);
             if (sampled && sampled[0] && Cesium.defined(sampled[0].height)) {
               floorData.floorHeightCache = sampled[0].height;
               cartographic.height = sampled[0].height + (ROBOT_HEIGHT / 2);
               return Cesium.Cartographic.toCartesian(cartographic);
             }
-          } catch (e) {
-            // 採樣失敗時使用下方的快取或模型中心高度推算
-          }
+          } catch (e) {}
         }
 
-        // 若樓層隱藏或尚未載入精細瓦片，使用已快取的該樓層地板高度，或以該樓層 boundingSphere 中心高度推算
         if (floorData.floorHeightCache !== null) {
           cartographic.height = floorData.floorHeightCache + (ROBOT_HEIGHT / 2);
         } else {
@@ -262,21 +261,14 @@
         return Cesium.Cartographic.toCartesian(cartographic);
       }
 
-      // ==========================================
-      // 4. AutoXing Robot 即時更新接口 (依 floor 匹配樓層)
-      // ==========================================
+      // 更新 Robot 位置
       const robotListContainer = document.getElementById('robotList');
 
       window.updateAutoXingRobot = async function(axData) {
         const floorNum = extractFloorNumber(axData.floor);
         const floorData = floorMap[floorNum];
+        if (!floorData) return;
 
-        if (!floorData) {
-          console.warn(`找不到對應樓層 (${axData.floor}) 的模型設定，請確認 MODELS_CONFIG 是否包含該樓層。`);
-          return;
-        }
-
-        // 若開啟「隨 Robot 自動切樓層」，自動顯示該樓層並隱藏其他樓層
         if (document.getElementById('autoSwitchFloorChk').checked) {
           Object.entries(floorMap).forEach(([fKey, fObj]) => {
             const shouldShow = (Number(fKey) === floorNum);
@@ -292,24 +284,21 @@
         const y = axData.pose.y;
         const yawDeg = Cesium.Math.toDegrees(axData.pose.yaw || 0);
 
-        // 取得該樓層對應的真實 Z 高度貼地世界坐標
         const worldPos = await getFloorGroundedPosition(floorData, x, y);
         const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(yawDeg), 0, 0);
         const orientation = Cesium.Transforms.headingPitchRollQuaternion(worldPos, hpr);
 
         const id = axData.robotId;
         const isFloorVisible = floorData.tileset.show;
-        const batteryStr = axData.battery !== undefined ? ` [${axData.battery}%]` : '';
 
         if (!robots[id]) {
-          // 清除初始提示字樣
           if (Object.keys(robots).length === 0) robotListContainer.innerHTML = '';
 
           const trailPositions = [worldPos];
           const entity = viewer.entities.add({
             id: id,
             name: id,
-            show: isFloorVisible, // 初始顯示狀態跟隨所屬樓層
+            show: isFloorVisible,
             position: worldPos,
             orientation: orientation,
             cylinder: {
@@ -321,7 +310,7 @@
               outlineColor: Cesium.Color.WHITE
             },
             label: {
-              text: `${id}${batteryStr}\n${floorData.config.name} (${x.toFixed(1)}, ${y.toFixed(1)})`,
+              text: `${id}\n${floorData.config.name} (${x.toFixed(1)}, ${y.toFixed(1)})`,
               font: '12px sans-serif',
               fillColor: Cesium.Color.WHITE,
               outlineColor: Cesium.Color.BLACK,
@@ -352,7 +341,6 @@
           robotListContainer.appendChild(row);
 
           document.getElementById(`fly-${id}`).onclick = () => {
-            // 點擊定位時，若該樓層被隱藏則自動打開顯示
             if (!floorData.tileset.show) {
               floorData.tileset.show = true;
               floorData.checkboxEl.checked = true;
@@ -370,16 +358,14 @@
           robots[id] = { entity, trailPositions, floorNum };
         } else {
           const r = robots[id];
-          // 若機器人跨樓層移動，清空上一樓層的軌跡線避免垂直拉絲
           if (r.floorNum !== floorNum) {
             r.trailPositions.length = 0;
             r.floorNum = floorNum;
           }
-
           r.entity.show = isFloorVisible;
           r.entity.position = worldPos;
           r.entity.orientation = orientation;
-          r.entity.label.text = `${id}${batteryStr}\n${floorData.config.name} (${x.toFixed(1)}, ${y.toFixed(1)})`;
+          r.entity.label.text = `${id}\n${floorData.config.name} (${x.toFixed(1)}, ${y.toFixed(1)})`;
 
           r.trailPositions.push(worldPos);
           if (r.trailPositions.length > 120) r.trailPositions.shift();
@@ -392,15 +378,128 @@
       };
 
       // ==========================================
-      // 5. 監聽來自 Route Studio 的跨分頁模擬 AutoXing API 推播
+      // 3. 解析並執行 JSON 路徑檔（畫出預設路線 + 啟動 Robot 沿線移動）
       // ==========================================
-      const mockChannel = new BroadcastChannel('autoxing_mock_telemetry');
-      mockChannel.onmessage = (event) => {
-        window.updateAutoXingRobot(event.data);
+      async function loadAndRunRouteJson(routeJson) {
+        const floorNum = extractFloorNumber(routeJson.floor);
+        const floorData = floorMap[floorNum];
+        if (!floorData) {
+          alert(`JSON 中的樓層 (${routeJson.floor}) 找不到對應的模型設定！`);
+          return;
+        }
+        if (!routeJson.waypoints || routeJson.waypoints.length < 2) {
+          alert('JSON 中的 waypoints 至少需要 2 個點！');
+          return;
+        }
+
+        // 1. 在該樓層地板上畫出 JSON 裡的預設黃色虛線路徑
+        const pathWorldPositions = [];
+        for (const pt of routeJson.waypoints) {
+          const pos = await getFloorGroundedPosition(floorData, pt.x, pt.y);
+          pathWorldPositions.push(pos);
+        }
+        if (routeJson.loopMode === 'loop') {
+          pathWorldPositions.push(pathWorldPositions[0]);
+        }
+
+        const routeLineEntity = viewer.entities.add({
+          show: floorData.tileset.show,
+          polyline: {
+            positions: pathWorldPositions,
+            width: 3,
+            material: new Cesium.PolylineDashMaterialProperty({ color: Cesium.Color.YELLOW.withAlpha(0.8) })
+          }
+        });
+        routeEntities.push({ floorNum, entity: routeLineEntity });
+
+        // 2. 根據 JSON 設定建立該機器人的自動巡邏模擬
+        let pts = [...routeJson.waypoints];
+        if (routeJson.loopMode === 'pingpong' && pts.length > 2) {
+          pts = pts.concat(pts.slice(1, -1).reverse());
+        }
+
+        const simState = {
+          robotId: routeJson.robotId || 'AX_ROBOT_001',
+          floor: floorNum,
+          speed: routeJson.speed || 0.8,
+          loopMode: routeJson.loopMode || 'loop',
+          pts: pts,
+          segIdx: 0,
+          segDist: 0
+        };
+        activeSimulators.push(simState);
+      }
+
+      // 定時器：驅動所有已載入 JSON 路徑的機器人移動
+      setInterval(() => {
+        const dt = 0.1; // 10Hz
+        for (const sim of activeSimulators) {
+          if (sim.loopMode === 'once' && sim.segIdx >= sim.pts.length - 1) continue;
+
+          const p1 = sim.pts[sim.segIdx];
+          const nextIdx = (sim.segIdx + 1) % sim.pts.length;
+          const p2 = sim.pts[nextIdx];
+
+          const dx = p2.x - p1.x;
+          const dy = p2.y - p1.y;
+          const len = Math.hypot(dx, dy);
+          if (len < 0.001) { sim.segIdx = nextIdx; continue; }
+
+          sim.segDist += sim.speed * dt;
+          if (sim.segDist >= len) {
+            sim.segDist -= len;
+            sim.segIdx = nextIdx;
+            continue;
+          }
+
+          const ratio = sim.segDist / len;
+          window.updateAutoXingRobot({
+            robotId: sim.robotId,
+            floor: sim.floor,
+            pose: {
+              x: p1.x + dx * ratio,
+              y: p1.y + dy * ratio,
+              yaw: Math.atan2(dy, dx)
+            }
+          });
+        }
+      }, 100);
+
+      // 方式 A：自動載入同資料夾內的 JSON 檔案清單
+      for (const filePath of AUTO_LOAD_ROUTE_FILES) {
+        try {
+          const res = await fetch(filePath);
+          if (res.ok) {
+            const jsonData = await res.json();
+            await loadAndRunRouteJson(jsonData);
+          }
+        } catch (err) {
+          console.warn(`自動載入 ${filePath} 失敗（若為直接雙擊開啟 HTML，請改用本地伺服器或使用「+ 匯入 JSON 路徑」按鈕）:`, err);
+        }
+      }
+
+      // 方式 B：點擊按鈕手動選擇 JSON 檔案匯入
+      const fileInput = document.getElementById('jsonFileInput');
+      document.getElementById('importJsonBtn').onclick = () => fileInput.click();
+      fileInput.onchange = async (e) => {
+        for (const file of e.target.files) {
+          const text = await file.text();
+          try {
+            const jsonData = JSON.parse(text);
+            await loadAndRunRouteJson(jsonData);
+          } catch (err) {
+            alert(`解析檔案 ${file.name} 失敗，請確認是否為正確的 JSON 格式。`);
+          }
+        }
+        fileInput.value = '';
       };
 
+      // 同時保留對 Route Studio 跨分頁即時推播的監聽
+      const mockChannel = new BroadcastChannel('autoxing_mock_telemetry');
+      mockChannel.onmessage = (event) => window.updateAutoXingRobot(event.data);
+
       // ==========================================
-      // 功能 A：雙擊滑鼠左鍵，以點擊的點為中心進行環繞視察
+      // 導航控制（雙擊中心環繞 + WASD 第一人稱）
       // ==========================================
       let pivotMarker = null;
       const handler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
@@ -415,18 +514,13 @@
             position: pickedPosition,
             point: { pixelSize: 10, color: Cesium.Color.LIME, outlineColor: Cesium.Color.BLACK, outlineWidth: 2 }
           });
-
-          const boundingSphere = new Cesium.BoundingSphere(pickedPosition, 1.0);
-          camera.flyToBoundingSphere(boundingSphere, {
+          camera.flyToBoundingSphere(new Cesium.BoundingSphere(pickedPosition, 1.0), {
             duration: 0.8,
             offset: new Cesium.HeadingPitchRange(camera.heading, Cesium.Math.toRadians(-15), 3.5)
           });
         }
       }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
-      // ==========================================
-      // 功能 B：第一人稱人眼視角漫遊 (WASD + 滑鼠環顧)
-      // ==========================================
       let isFpvMode = false;
       const flags = { moveForward: false, moveBackward: false, moveLeft: false, moveRight: false, moveUp: false, moveDown: false, look: false };
       let startMousePosition, mousePosition;
@@ -445,14 +539,12 @@
 
         if (fpv) {
           if (pivotMarker) viewer.entities.remove(pivotMarker);
-          camera.setView({
-            orientation: { heading: camera.heading, pitch: 0.0, roll: 0.0 }
-          });
+          camera.setView({ orientation: { heading: camera.heading, pitch: 0.0, roll: 0.0 } });
           document.getElementById('controlGuide').innerHTML = `
             <strong>人眼第一人稱模式（已鎖定平視）：</strong><br>
             • <b>W / S</b>：前進 / 後退 ｜ <b>A / D</b>：左移 / 右移<br>
             • <b>Q / E</b>：升高 / 降低視線高度<br>
-            • <b>按住左鍵拖曳</b>：原地轉頭環顧四周（不會歪斜）
+            • <b>按住左鍵拖曳</b>：原地轉頭環顧四周
           `;
         } else {
           document.getElementById('controlGuide').innerHTML = `
@@ -467,71 +559,52 @@
       document.getElementById('orbitModeBtn').onclick = () => setNavigationMode(false);
       document.getElementById('fpvModeBtn').onclick = () => setNavigationMode(true);
 
-      handler.setInputAction((movement) => {
+      handler.setInputAction((m) => {
         if (!isFpvMode) return;
         flags.look = true;
-        mousePosition = startMousePosition = Cesium.Cartesian3.clone(movement.position);
+        mousePosition = startMousePosition = Cesium.Cartesian3.clone(m.position);
       }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
-
-      handler.setInputAction((movement) => {
-        if (!isFpvMode || !flags.look) return;
-        mousePosition = movement.endPosition;
-      }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
-
+      handler.setInputAction((m) => { if (isFpvMode && flags.look) mousePosition = m.endPosition; }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
       handler.setInputAction(() => { flags.look = false; }, Cesium.ScreenSpaceEventType.LEFT_UP);
 
       document.addEventListener('keydown', (e) => {
         if (!isFpvMode) return;
-        switch (e.code) {
-          case 'KeyW': case 'ArrowUp': flags.moveForward = true; break;
-          case 'KeyS': case 'ArrowDown': flags.moveBackward = true; break;
-          case 'KeyA': case 'ArrowLeft': flags.moveLeft = true; break;
-          case 'KeyD': case 'ArrowRight': flags.moveRight = true; break;
-          case 'KeyE': flags.moveUp = true; break;
-          case 'KeyQ': flags.moveDown = true; break;
-        }
+        if (e.code === 'KeyW' || e.code === 'ArrowUp') flags.moveForward = true;
+        if (e.code === 'KeyS' || e.code === 'ArrowDown') flags.moveBackward = true;
+        if (e.code === 'KeyA' || e.code === 'ArrowLeft') flags.moveLeft = true;
+        if (e.code === 'KeyD' || e.code === 'ArrowRight') flags.moveRight = true;
+        if (e.code === 'KeyE') flags.moveUp = true;
+        if (e.code === 'KeyQ') flags.moveDown = true;
       });
-
       document.addEventListener('keyup', (e) => {
-        switch (e.code) {
-          case 'KeyW': case 'ArrowUp': flags.moveForward = false; break;
-          case 'KeyS': case 'ArrowDown': flags.moveBackward = false; break;
-          case 'KeyA': case 'ArrowLeft': flags.moveLeft = false; break;
-          case 'KeyD': case 'ArrowRight': flags.moveRight = false; break;
-          case 'KeyE': flags.moveUp = false; break;
-          case 'KeyQ': flags.moveDown = false; break;
-        }
+        if (e.code === 'KeyW' || e.code === 'ArrowUp') flags.moveForward = false;
+        if (e.code === 'KeyS' || e.code === 'ArrowDown') flags.moveBackward = false;
+        if (e.code === 'KeyA' || e.code === 'ArrowLeft') flags.moveLeft = false;
+        if (e.code === 'KeyD' || e.code === 'ArrowRight') flags.moveRight = false;
+        if (e.code === 'KeyE') flags.moveUp = false;
+        if (e.code === 'KeyQ') flags.moveDown = false;
       });
 
       viewer.clock.onTick.addEventListener(() => {
         if (!isFpvMode) return;
-
         if (flags.look) {
           const width = scene.canvas.clientWidth;
           const height = scene.canvas.clientHeight;
           const x = (mousePosition.x - startMousePosition.x) / width;
           const y = -(mousePosition.y - startMousePosition.y) / height;
-          const lookFactor = 0.05;
-
-          const newHeading = camera.heading + x * lookFactor * 15;
-          const newPitch = Cesium.Math.clamp(
-            camera.pitch + y * lookFactor * 10,
-            Cesium.Math.toRadians(-85),
-            Cesium.Math.toRadians(85)
-          );
           camera.setView({
-            orientation: { heading: newHeading, pitch: newPitch, roll: 0.0 }
+            orientation: {
+              heading: camera.heading + x * 0.75,
+              pitch: Cesium.Math.clamp(camera.pitch + y * 0.5, Cesium.Math.toRadians(-85), Cesium.Math.toRadians(85)),
+              roll: 0.0
+            }
           });
         }
-
         const walkSpeed = 0.08;
         const transform = Cesium.Transforms.eastNorthUpToFixedFrame(camera.positionWC);
         const h = camera.heading;
-        const localForward = new Cesium.Cartesian3(Math.sin(h), Math.cos(h), 0);
-        const localRight = new Cesium.Cartesian3(Math.cos(h), -Math.sin(h), 0);
-
-        const worldForward = Cesium.Matrix4.multiplyByPointAsVector(transform, localForward, new Cesium.Cartesian3());
-        const worldRight = Cesium.Matrix4.multiplyByPointAsVector(transform, localRight, new Cesium.Cartesian3());
+        const worldForward = Cesium.Matrix4.multiplyByPointAsVector(transform, new Cesium.Cartesian3(Math.sin(h), Math.cos(h), 0), new Cesium.Cartesian3());
+        const worldRight = Cesium.Matrix4.multiplyByPointAsVector(transform, new Cesium.Cartesian3(Math.cos(h), -Math.sin(h), 0), new Cesium.Cartesian3());
 
         if (flags.moveForward) camera.move(worldForward, walkSpeed);
         if (flags.moveBackward) camera.move(worldForward, -walkSpeed);
@@ -541,9 +614,6 @@
         if (flags.moveDown) camera.moveDown(walkSpeed);
       });
 
-      // ==========================================
-      // 功能 C：工具列快捷按鈕
-      // ==========================================
       document.getElementById('topViewBtn').onclick = () => {
         setNavigationMode(false);
         viewer.trackedEntity = undefined;
@@ -559,9 +629,7 @@
         camera.flyToBoundingSphere(activeTileset.boundingSphere, {
           duration: 1.0,
           offset: new Cesium.HeadingPitchRange(0, 0, 1.5),
-          complete: () => {
-            setNavigationMode(true);
-          }
+          complete: () => setNavigationMode(true)
         });
       };
 
