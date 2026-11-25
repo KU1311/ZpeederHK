@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>Cesium LiDAR 室內走廊（多樓層 Robot 與 JSON 路徑版）</title>
+  <title>Cesium LiDAR 室內走廊（多樓層 Robot 與遠端 JSON 自動載入版）</title>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
   <style>
@@ -52,6 +52,7 @@
     }
     .fly-mini-btn.follow { background: #107c10; }
     .coord-text { font-family: monospace; font-size: 11px; color: #4fc3f7; display: block; }
+    .status-note { font-size: 11px; color: #aaa; margin-bottom: 6px; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -88,16 +89,15 @@
       </div>
     </div>
 
-    <!-- Robot 即時監控與 JSON 匯入清單 -->
+    <!-- Robot 即時監控與遠端 JSON 載入狀態 -->
     <div class="section-block">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
         <span style="font-size: 12px; color: #aaa; font-weight:bold;">Robot 軌跡與即時位置：</span>
-        <!-- 支援手動選擇任意資料夾的 JSON 檔 -->
-        <button id="importJsonBtn" class="fly-mini-btn" style="background:#d83b01;">+ 匯入 JSON 路徑</button>
-        <input type="file" id="jsonFileInput" accept=".json" multiple style="display:none;">
+        <button id="reloadRoutesBtn" class="fly-mini-btn" style="background:#555;">重新載入 JSON</button>
       </div>
+      <div class="status-note" id="routeLoadStatus">準備載入路徑 JSON...</div>
       <div id="robotList">
-        <div style="font-size:11px; color:#777;">尚未載入路徑，請點擊上方「+ 匯入 JSON 路徑」或設定同資料夾自動載入...</div>
+        <div style="font-size:11px; color:#777;">正在載入路徑 JSON...</div>
       </div>
     </div>
   </div>
@@ -105,23 +105,22 @@
   <script>
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IkZqU3ltVnAtUXJJeHJiX20iLCJqdGkiOiJjNGIzMjQ1ZS0xM2EyLTQ2NWMtYWYwOS1mYWUxOTMyZjllNmMiLCJpZCI6NTUyNjg2LCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3OTUwODIzODd9.JEBZaZMgJZBqkYtDQ3qWukrTRelSvU5slfcznBTGd2Q';
 
-    // ==========================================
-    // 1. 【樓層模型清單】
-    // ==========================================
+    // =========================================================================
+    // 【主要設定區】在此增減「樓層模型」與「Robot 路徑 JSON 網址」
+    // =========================================================================
     const MODELS_CONFIG = [
       { name: '13/f', assetId: 6184026, show: true },
       { name: '12/f', assetId: 6183954, show: true },
       { name: '11/f', assetId: 6179670, show: true }
     ];
 
-    // ==========================================
-    // 2. 【同資料夾自動載入的 JSON 路徑清單】
-    // 將 route-studio 下載的 .json 放在與此 HTML 同一資料夾，並把檔名填入下方陣列：
-    // ==========================================
-    const AUTO_LOAD_ROUTE_FILES = [
-      // './route_13f.json',
-      // './route_12f.json',
+    // 新增路徑時，直接在此陣列加上新的 .json 網址即可：
+    const ROUTE_JSON_URLS = [
+      'https://ku1311.github.io/ZpeederHK/robot/model_corridor_A_route.json',
+      'https://ku1311.github.io/ZpeederHK/robot/model_corridor_B_route.json',
+      'https://ku1311.github.io/ZpeederHK/robot/model_corridor_C_route.json'
     ];
+    // =========================================================================
 
     const ROBOT_HEIGHT = 0.7;
 
@@ -158,8 +157,9 @@
       const modelListContainer = document.getElementById('modelList');
       const floorMap = {};
       const robots = {};
-      const routeEntities = []; // 儲存畫在地圖上的預設路徑線
-      const activeSimulators = []; // 儲存從 JSON 啟動的路徑模擬器
+      const routeEntities = [];
+      const activeSimulators = [];
+      const loadedRouteKeys = new Set();
       let activeTileset = null;
 
       function syncRobotsVisibilityForFloor(floorNum, isVisible) {
@@ -228,7 +228,6 @@
         await viewer.zoomTo(activeTileset, new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 20));
       }
 
-      // 取得該樓層貼地 Z 高度世界坐標
       async function getFloorGroundedPosition(floorData, localX, localY) {
         const rawWorldPos = Cesium.Matrix4.multiplyByPoint(
           floorData.enuMatrix,
@@ -261,7 +260,6 @@
         return Cesium.Cartographic.toCartesian(cartographic);
       }
 
-      // 更新 Robot 位置
       const robotListContainer = document.getElementById('robotList');
 
       window.updateAutoXingRobot = async function(axData) {
@@ -377,22 +375,22 @@
         }
       };
 
-      // ==========================================
-      // 3. 解析並執行 JSON 路徑檔（畫出預設路線 + 啟動 Robot 沿線移動）
-      // ==========================================
-      async function loadAndRunRouteJson(routeJson) {
+      async function loadAndRunRouteJson(routeJson, uniqueKey) {
+        if (uniqueKey && loadedRouteKeys.has(uniqueKey)) return;
+
         const floorNum = extractFloorNumber(routeJson.floor);
         const floorData = floorMap[floorNum];
         if (!floorData) {
-          alert(`JSON 中的樓層 (${routeJson.floor}) 找不到對應的模型設定！`);
+          console.warn(`JSON 樓層 (${routeJson.floor}) 找不到對應的 MODELS_CONFIG 設定`);
           return;
         }
         if (!routeJson.waypoints || routeJson.waypoints.length < 2) {
-          alert('JSON 中的 waypoints 至少需要 2 個點！');
+          console.warn('JSON waypoints 至少需要 2 個點');
           return;
         }
 
-        // 1. 在該樓層地板上畫出 JSON 裡的預設黃色虛線路徑
+        if (uniqueKey) loadedRouteKeys.add(uniqueKey);
+
         const pathWorldPositions = [];
         for (const pt of routeJson.waypoints) {
           const pos = await getFloorGroundedPosition(floorData, pt.x, pt.y);
@@ -407,18 +405,17 @@
           polyline: {
             positions: pathWorldPositions,
             width: 3,
-            material: new Cesium.PolylineDashMaterialProperty({ color: Cesium.Color.YELLOW.withAlpha(0.8) })
+            material: new Cesium.PolylineDashMaterialProperty({ color: Cesium.Color.YELLOW.withAlpha(0.85) })
           }
         });
         routeEntities.push({ floorNum, entity: routeLineEntity });
 
-        // 2. 根據 JSON 設定建立該機器人的自動巡邏模擬
         let pts = [...routeJson.waypoints];
         if (routeJson.loopMode === 'pingpong' && pts.length > 2) {
           pts = pts.concat(pts.slice(1, -1).reverse());
         }
 
-        const simState = {
+        activeSimulators.push({
           robotId: routeJson.robotId || 'AX_ROBOT_001',
           floor: floorNum,
           speed: routeJson.speed || 0.8,
@@ -426,13 +423,49 @@
           pts: pts,
           segIdx: 0,
           segDist: 0
-        };
-        activeSimulators.push(simState);
+        });
       }
 
-      // 定時器：驅動所有已載入 JSON 路徑的機器人移動
+      async function loadHardcodedRoutes() {
+        const statusEl = document.getElementById('routeLoadStatus');
+        let successCount = 0;
+        const failedUrls = [];
+
+        for (const url of ROUTE_JSON_URLS) {
+          try {
+            const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`);
+            if (!res.ok) {
+              failedUrls.push(url.split('/').pop());
+              continue;
+            }
+            const data = await res.json();
+            const routesArray = Array.isArray(data) ? data : [data];
+            for (let i = 0; i < routesArray.length; i++) {
+              await loadAndRunRouteJson(routesArray[i], `${url}#${i}`);
+              successCount++;
+            }
+          } catch (err) {
+            failedUrls.push(url.split('/').pop());
+            console.warn(`載入路徑 JSON 失敗 (${url}):`, err);
+          }
+        }
+
+        let statusText = `已載入 ${successCount}/${ROUTE_JSON_URLS.length} 條路徑`;
+        if (failedUrls.length > 0) {
+          statusText += `（未找到或失敗：${failedUrls.join(', ')}）`;
+        }
+        statusEl.textContent = statusText;
+
+        if (successCount === 0 && Object.keys(robots).length === 0) {
+          robotListContainer.innerHTML = `<div style="font-size:11px; color:#f48771;">目前沒有成功載入任何路徑 JSON，請確認遠端檔案是否已上傳。</div>`;
+        }
+      }
+
+      await loadHardcodedRoutes();
+      document.getElementById('reloadRoutesBtn').onclick = () => loadHardcodedRoutes();
+
       setInterval(() => {
-        const dt = 0.1; // 10Hz
+        const dt = 0.1;
         for (const sim of activeSimulators) {
           if (sim.loopMode === 'once' && sim.segIdx >= sim.pts.length - 1) continue;
 
@@ -465,36 +498,6 @@
         }
       }, 100);
 
-      // 方式 A：自動載入同資料夾內的 JSON 檔案清單
-      for (const filePath of AUTO_LOAD_ROUTE_FILES) {
-        try {
-          const res = await fetch(filePath);
-          if (res.ok) {
-            const jsonData = await res.json();
-            await loadAndRunRouteJson(jsonData);
-          }
-        } catch (err) {
-          console.warn(`自動載入 ${filePath} 失敗（若為直接雙擊開啟 HTML，請改用本地伺服器或使用「+ 匯入 JSON 路徑」按鈕）:`, err);
-        }
-      }
-
-      // 方式 B：點擊按鈕手動選擇 JSON 檔案匯入
-      const fileInput = document.getElementById('jsonFileInput');
-      document.getElementById('importJsonBtn').onclick = () => fileInput.click();
-      fileInput.onchange = async (e) => {
-        for (const file of e.target.files) {
-          const text = await file.text();
-          try {
-            const jsonData = JSON.parse(text);
-            await loadAndRunRouteJson(jsonData);
-          } catch (err) {
-            alert(`解析檔案 ${file.name} 失敗，請確認是否為正確的 JSON 格式。`);
-          }
-        }
-        fileInput.value = '';
-      };
-
-      // 同時保留對 Route Studio 跨分頁即時推播的監聽
       const mockChannel = new BroadcastChannel('autoxing_mock_telemetry');
       mockChannel.onmessage = (event) => window.updateAutoXingRobot(event.data);
 
