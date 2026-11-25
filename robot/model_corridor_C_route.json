@@ -1,0 +1,17 @@
+{
+  "modelId": "model_corridor_A",
+  "robotId": "AX_ROBOT_003",
+  "floor": 13,
+  "speed": 0.6,
+  "loopMode": "loop",
+  "waypoints": [
+    {
+      "x": -10.383,
+      "y": 3.86
+    },
+    {
+      "x": -0.494,
+      "y": 6.839
+    }
+  ]
+}
