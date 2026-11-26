@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>Cesium LiDAR 室內走廊（多樓層 Robot 穩定高度版）</title>
+  <title>Cesium LiDAR 室內走廊（跨樓層搭 Lift 與轉接器版）</title>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
   <style>
@@ -107,12 +107,11 @@
 
     // =========================================================================
     // 【主要設定區】在此增減「樓層模型」、「預設 floorZ」與「Robot 路徑 JSON 網址」
-    // defaultFloorZ：相對於該樓層模型中心的地板 Z 高度（公尺），若 JSON 內有 floorZ 會優先使用 JSON
     // =========================================================================
     const MODELS_CONFIG = [
-      { name: '11/f', assetId: 6184026, show: true, defaultFloorZ: -1.5 },
-      { name: '12/f', assetId: 6183954, show: true, defaultFloorZ: -1.5 },
-      { name: '13/f', assetId: 6179670, show: true, defaultFloorZ: -1.5 }
+      { name: '13/f', assetId: 6184026, show: true, defaultFloorZ: -1.2 },
+      { name: '12/f', assetId: 6183954, show: true, defaultFloorZ: -1.2 },
+      { name: '11/f', assetId: 6179670, show: true, defaultFloorZ: -1.2 }
     ];
 
     // 新增路徑時，直接在此陣列加上新的 .json 網址即可：
@@ -121,6 +120,13 @@
       'https://ku1311.github.io/ZpeederHK/robot/model_corridor_B_route.json',
       'https://ku1311.github.io/ZpeederHK/robot/model_corridor_C_route.json'
     ];
+
+    // 若真實 SDK 回傳 mapId 或 areaId 而非直接回傳樓層數字，可在此建立對照表：
+    const MAP_ID_TO_FLOOR = {
+      // 'map_13f': 13,
+      // 'map_12f': 12,
+      // 'map_11f': 11,
+    };
     // =========================================================================
 
     const ROBOT_HEIGHT = 0.7;
@@ -129,6 +135,34 @@
       if (floorInput === undefined || floorInput === null) return null;
       const match = String(floorInput).match(/-?\d+/);
       return match ? parseInt(match[0], 10) : null;
+    }
+
+    /**
+     * 將模擬封包或未來真實 AutoXing SDK 回調資料轉為 Viewer 統一格式
+     */
+    function adaptAutoXingPayload(raw) {
+      if (!raw) return null;
+
+      let resolvedFloor = raw.floor;
+      if ((resolvedFloor === undefined || resolvedFloor === null) && raw.mapId && MAP_ID_TO_FLOOR[raw.mapId]) {
+        resolvedFloor = MAP_ID_TO_FLOOR[raw.mapId];
+      } else if ((resolvedFloor === undefined || resolvedFloor === null) && raw.areaId && MAP_ID_TO_FLOOR[raw.areaId]) {
+        resolvedFloor = MAP_ID_TO_FLOOR[raw.areaId];
+      }
+
+      const poseSrc = raw.pose || raw;
+      const x = Number(poseSrc.x ?? 0);
+      const y = Number(poseSrc.y ?? 0);
+      const z = (poseSrc.z !== undefined && poseSrc.z !== null) ? Number(poseSrc.z) : null;
+      const yawRad = Number(poseSrc.yaw ?? poseSrc.theta ?? 0);
+
+      return {
+        robotId: raw.robotId || raw.sn || raw.id || 'AX_ROBOT_001',
+        floor: resolvedFloor,
+        overrideWorldPos: raw.overrideWorldPos || null,
+        isLiftTransition: Boolean(raw.isLiftTransition),
+        pose: { x, y, z, yaw: yawRad }
+      };
     }
 
     async function init() {
@@ -165,7 +199,11 @@
 
       function syncRobotsVisibilityForFloor(floorNum, isVisible) {
         Object.values(robots).forEach(r => {
-          if (r.floorNum === floorNum) r.entity.show = isVisible;
+          if (r.isLiftTransition) {
+            r.entity.show = true;
+          } else if (r.floorNum === floorNum) {
+            r.entity.show = isVisible;
+          }
         });
         routeEntities.forEach(item => {
           if (item.floorNum === floorNum) item.entity.show = isVisible;
@@ -229,7 +267,6 @@
         await viewer.zoomTo(activeTileset, new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 20));
       }
 
-      // 穩定高度計算：使用 JSON 指定的 floorZ / waypoint.z 或樓層預設 defaultFloorZ，不再每幀重抓避免跳動
       function getStableFloorPosition(floorData, localX, localY, explicitZ) {
         const relativeFloorZ = (explicitZ !== undefined && explicitZ !== null)
           ? explicitZ
@@ -239,9 +276,29 @@
         return Cesium.Matrix4.multiplyByPoint(floorData.enuMatrix, localPoint, new Cesium.Cartesian3());
       }
 
+      function waypointToWorldPos(wp, fallbackFloorNum, fallbackFloorZ) {
+        const fNum = extractFloorNumber(wp.floor !== undefined ? wp.floor : fallbackFloorNum);
+        const fData = floorMap[fNum] || floorMap[fallbackFloorNum];
+        const zVal = (wp.z !== undefined && wp.z !== null)
+          ? wp.z
+          : (wp.floorZ !== undefined && wp.floorZ !== null ? wp.floorZ : (fData ? fData.floorZ : fallbackFloorZ));
+
+        return {
+          floorNum: fNum,
+          x: wp.x,
+          y: wp.y,
+          z: zVal,
+          worldPos: fData ? getStableFloorPosition(fData, wp.x, wp.y, zVal) : null,
+          waitSec: Number(wp.waitSec || 0)
+        };
+      }
+
       const robotListContainer = document.getElementById('robotList');
 
-      window.updateAutoXingRobot = function(axData) {
+      window.updateAutoXingRobot = function(rawAxData) {
+        const axData = adaptAutoXingPayload(rawAxData);
+        if (!axData) return;
+
         const floorNum = extractFloorNumber(axData.floor);
         const floorData = floorMap[floorNum];
         if (!floorData) return;
@@ -264,12 +321,16 @@
           ? axData.pose.z
           : floorData.floorZ;
 
-        const worldPos = getStableFloorPosition(floorData, x, y, explicitZ);
+        const worldPos = axData.overrideWorldPos
+          ? axData.overrideWorldPos
+          : getStableFloorPosition(floorData, x, y, explicitZ);
+
         const hpr = new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(yawDeg), 0, 0);
         const orientation = Cesium.Transforms.headingPitchRollQuaternion(worldPos, hpr);
 
         const id = axData.robotId;
-        const isFloorVisible = floorData.tileset.show;
+        const isFloorVisible = axData.isLiftTransition ? true : floorData.tileset.show;
+        const floorLabelText = axData.isLiftTransition ? `${floorData.config.name} (Lift)` : floorData.config.name;
 
         if (!robots[id]) {
           if (Object.keys(robots).length === 0) robotListContainer.innerHTML = '';
@@ -290,7 +351,7 @@
               outlineColor: Cesium.Color.WHITE
             },
             label: {
-              text: `${id}\n${floorData.config.name} (${x.toFixed(1)}, ${y.toFixed(1)})`,
+              text: `${id}\n${floorLabelText} (${x.toFixed(1)}, ${y.toFixed(1)})`,
               font: '12px sans-serif',
               fillColor: Cesium.Color.WHITE,
               outlineColor: Cesium.Color.BLACK,
@@ -310,7 +371,7 @@
           row.className = 'model-item';
           row.innerHTML = `
             <div>
-              <strong>${id}</strong> <span style="color:#8ce99a; font-size:11px;" id="flr-${id}">[${floorData.config.name}]</span>
+              <strong>${id}</strong> <span style="color:#8ce99a; font-size:11px;" id="flr-${id}">[${floorLabelText}]</span>
               <span class="coord-text" id="coord-${id}">X:${x.toFixed(2)} Y:${y.toFixed(2)} Z:${explicitZ.toFixed(2)}</span>
             </div>
             <div>
@@ -335,17 +396,18 @@
             viewer.trackedEntity = entity;
           };
 
-          robots[id] = { entity, trailPositions, floorNum };
+          robots[id] = { entity, trailPositions, floorNum, isLiftTransition: axData.isLiftTransition };
         } else {
           const r = robots[id];
           if (r.floorNum !== floorNum) {
             r.trailPositions.length = 0;
             r.floorNum = floorNum;
           }
+          r.isLiftTransition = axData.isLiftTransition;
           r.entity.show = isFloorVisible;
           r.entity.position = worldPos;
           r.entity.orientation = orientation;
-          r.entity.label.text = `${id}\n${floorData.config.name} (${x.toFixed(1)}, ${y.toFixed(1)})`;
+          r.entity.label.text = `${id}\n${floorLabelText} (${x.toFixed(1)}, ${y.toFixed(1)})`;
 
           r.trailPositions.push(worldPos);
           if (r.trailPositions.length > 120) r.trailPositions.shift();
@@ -353,16 +415,16 @@
           const coordEl = document.getElementById(`coord-${id}`);
           const flrEl = document.getElementById(`flr-${id}`);
           if (coordEl) coordEl.innerText = `X:${x.toFixed(2)} Y:${y.toFixed(2)} Z:${explicitZ.toFixed(2)}`;
-          if (flrEl) flrEl.innerText = `[${floorData.config.name}]`;
+          if (flrEl) flrEl.innerText = `[${floorLabelText}]`;
         }
       };
 
       async function loadAndRunRouteJson(routeJson, uniqueKey) {
         if (uniqueKey && loadedRouteKeys.has(uniqueKey)) return;
 
-        const floorNum = extractFloorNumber(routeJson.floor);
-        const floorData = floorMap[floorNum];
-        if (!floorData) {
+        const baseFloorNum = extractFloorNumber(routeJson.floor);
+        const baseFloorData = floorMap[baseFloorNum];
+        if (!baseFloorData) {
           console.warn(`JSON 樓層 (${routeJson.floor}) 找不到對應的 MODELS_CONFIG 設定`);
           return;
         }
@@ -373,43 +435,57 @@
 
         if (uniqueKey) loadedRouteKeys.add(uniqueKey);
 
-        // 若 JSON 有提供 floorZ，更新該樓層的基準高度
         const routeFloorZ = (routeJson.floorZ !== undefined && routeJson.floorZ !== null)
           ? routeJson.floorZ
-          : floorData.floorZ;
+          : baseFloorData.floorZ;
 
-        const pathWorldPositions = routeJson.waypoints.map(pt => {
-          const ptZ = (pt.z !== undefined && pt.z !== null) ? pt.z : routeFloorZ;
-          return getStableFloorPosition(floorData, pt.x, pt.y, ptZ);
-        });
-        if (routeJson.loopMode === 'loop') {
-          pathWorldPositions.push(pathWorldPositions[0]);
-        }
+        const resolvedPts = routeJson.waypoints
+          .map(wp => waypointToWorldPos(wp, baseFloorNum, routeFloorZ))
+          .filter(pt => pt.worldPos !== null);
 
-        const routeLineEntity = viewer.entities.add({
-          show: floorData.tileset.show,
-          polyline: {
-            positions: pathWorldPositions,
-            width: 3,
-            material: new Cesium.PolylineDashMaterialProperty({ color: Cesium.Color.YELLOW.withAlpha(0.85) })
+        if (resolvedPts.length < 2) return;
+
+        // 按樓層分段繪製預設虛線路徑
+        let currentSegmentGroup = [];
+        const flushSegmentGroup = () => {
+          if (currentSegmentGroup.length >= 2) {
+            const segFloorNum = currentSegmentGroup[0].floorNum;
+            const segFloorData = floorMap[segFloorNum] || baseFloorData;
+            const lineEntity = viewer.entities.add({
+              show: segFloorData.tileset.show,
+              polyline: {
+                positions: currentSegmentGroup.map(p => p.worldPos),
+                width: 3,
+                material: new Cesium.PolylineDashMaterialProperty({ color: Cesium.Color.YELLOW.withAlpha(0.85) })
+              }
+            });
+            routeEntities.push({ floorNum: segFloorNum, entity: lineEntity });
           }
-        });
-        routeEntities.push({ floorNum, entity: routeLineEntity });
+          currentSegmentGroup = [];
+        };
 
-        let pts = [...routeJson.waypoints];
-        if (routeJson.loopMode === 'pingpong' && pts.length > 2) {
-          pts = pts.concat(pts.slice(1, -1).reverse());
+        for (let i = 0; i < resolvedPts.length; i++) {
+          const pt = resolvedPts[i];
+          if (currentSegmentGroup.length > 0 && currentSegmentGroup[currentSegmentGroup.length - 1].floorNum !== pt.floorNum) {
+            flushSegmentGroup();
+          }
+          currentSegmentGroup.push(pt);
+        }
+        flushSegmentGroup();
+
+        let simPts = [...resolvedPts];
+        if (routeJson.loopMode === 'pingpong' && simPts.length > 2) {
+          simPts = simPts.concat(simPts.slice(1, -1).reverse());
         }
 
         activeSimulators.push({
           robotId: routeJson.robotId || 'AX_ROBOT_001',
-          floor: floorNum,
-          floorZ: routeFloorZ,
           speed: routeJson.speed || 0.8,
           loopMode: routeJson.loopMode || 'loop',
-          pts: pts,
+          pts: simPts,
           segIdx: 0,
-          segDist: 0
+          segDist: 0,
+          waitRemaining: 0
         });
       }
 
@@ -451,41 +527,77 @@
       await loadHardcodedRoutes();
       document.getElementById('reloadRoutesBtn').onclick = () => loadHardcodedRoutes();
 
+      // 支援跨樓層搭 Lift 與停留等待的模擬推進迴圈
       setInterval(() => {
         const dt = 0.1;
         for (const sim of activeSimulators) {
+          if (sim.pts.length < 2) continue;
           if (sim.loopMode === 'once' && sim.segIdx >= sim.pts.length - 1) continue;
+
+          if (sim.waitRemaining > 0) {
+            sim.waitRemaining = Math.max(0, sim.waitRemaining - dt);
+            continue;
+          }
 
           const p1 = sim.pts[sim.segIdx];
           const nextIdx = (sim.segIdx + 1) % sim.pts.length;
           const p2 = sim.pts[nextIdx];
 
-          const dx = p2.x - p1.x;
-          const dy = p2.y - p1.y;
-          const len = Math.hypot(dx, dy);
-          if (len < 0.001) { sim.segIdx = nextIdx; continue; }
+          const isCrossFloor = p1.floorNum !== p2.floorNum;
+          const dist = isCrossFloor
+            ? Cesium.Cartesian3.distance(p1.worldPos, p2.worldPos)
+            : Math.hypot(p2.x - p1.x, p2.y - p1.y);
 
-          sim.segDist += sim.speed * dt;
-          if (sim.segDist >= len) {
-            sim.segDist -= len;
+          if (dist < 0.001) {
             sim.segIdx = nextIdx;
+            sim.waitRemaining = p2.waitSec || 0;
             continue;
           }
 
-          const ratio = sim.segDist / len;
-          const z1 = (p1.z !== undefined && p1.z !== null) ? p1.z : sim.floorZ;
-          const z2 = (p2.z !== undefined && p2.z !== null) ? p2.z : sim.floorZ;
+          const moveSpeed = isCrossFloor ? Math.min(sim.speed, 1.5) : sim.speed;
+          sim.segDist += moveSpeed * dt;
 
-          window.updateAutoXingRobot({
-            robotId: sim.robotId,
-            floor: sim.floor,
-            pose: {
-              x: p1.x + dx * ratio,
-              y: p1.y + dy * ratio,
-              z: z1 + (z2 - z1) * ratio,
-              yaw: Math.atan2(dy, dx)
-            }
-          });
+          if (sim.segDist >= dist) {
+            sim.segDist -= dist;
+            sim.segIdx = nextIdx;
+            sim.waitRemaining = p2.waitSec || 0;
+            continue;
+          }
+
+          const ratio = sim.segDist / dist;
+          const curX = p1.x + (p2.x - p1.x) * ratio;
+          const curY = p1.y + (p2.y - p1.y) * ratio;
+          const yaw = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+
+          if (isCrossFloor) {
+            const interpWorldPos = Cesium.Cartesian3.lerp(
+              p1.worldPos,
+              p2.worldPos,
+              ratio,
+              new Cesium.Cartesian3()
+            );
+            const activeFloor = ratio >= 0.5 ? p2.floorNum : p1.floorNum;
+
+            window.updateAutoXingRobot({
+              robotId: sim.robotId,
+              floor: activeFloor,
+              isLiftTransition: true,
+              overrideWorldPos: interpWorldPos,
+              pose: { x: curX, y: curY, z: p2.z, yaw }
+            });
+          } else {
+            window.updateAutoXingRobot({
+              robotId: sim.robotId,
+              floor: p1.floorNum,
+              isLiftTransition: false,
+              pose: {
+                x: curX,
+                y: curY,
+                z: p1.z + (p2.z - p1.z) * ratio,
+                yaw
+              }
+            });
+          }
         }
       }, 100);
 

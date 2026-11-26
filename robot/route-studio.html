@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>AutoXing Mock API 路徑製作器 (Route Studio)</title>
+  <title>AutoXing Mock API 路徑製作器 (Route Studio - 跨樓層版)</title>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
   <style>
@@ -12,7 +12,6 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       display: flex; background: #141414; color: #eee;
     }
-    /* 左側 3D 畫布區 */
     #mapWrapper {
       flex: 1; position: relative; height: 100%;
     }
@@ -22,12 +21,10 @@
       background: rgba(20, 20, 20, 0.88); padding: 10px 14px;
       border-radius: 6px; border-left: 4px solid #00a8e8; font-size: 13px;
     }
-
-    /* 右側路徑與 API 控制台 */
     #studioPanel {
-      width: 400px; height: 100%; background: #1e1e1e;
+      width: 430px; height: 100%; background: #1e1e1e;
       border-left: 1px solid #333; display: flex; flex-direction: column;
-      padding: 16px; overflow-y: auto; gap: 14px;
+      padding: 16px; overflow-y: auto; gap: 12px;
     }
     h2 { margin: 0; font-size: 16px; color: #fff; display: flex; align-items: center; justify-content: space-between; }
     .badge { background: #0078d4; font-size: 11px; padding: 2px 7px; border-radius: 4px; }
@@ -55,7 +52,17 @@
     button.secondary:hover { background: #4a4a4a; }
     button.success { background: #107c10; }
     button.success:hover { background: #0d650d; }
-
+    .wp-list {
+      max-height: 150px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+      margin-bottom: 8px;
+    }
+    .wp-row {
+      display: grid; grid-template-columns: 44px 1fr 64px 72px; gap: 6px; align-items: center;
+      background: #1b1b1b; border: 1px solid #333; padding: 5px 7px; border-radius: 4px; font-size: 11px;
+    }
+    .wp-row input, .wp-row select {
+      padding: 3px 5px; font-size: 11px;
+    }
     textarea {
       width: 100%; height: 140px; background: #111; color: #4fc3f7;
       border: 1px solid #333; border-radius: 4px; padding: 8px;
@@ -70,31 +77,40 @@
 </head>
 <body>
 
-  <!-- 左側：3D 走廊畫布 -->
   <div id="mapWrapper">
     <div id="cesiumContainer"></div>
     <div id="topHint">
       <strong>操作說明：</strong><br>
-      • <b>左鍵單擊地板</b>：新增路徑轉折點 (Waypoint)<br>
+      • <b>左鍵單擊地板</b>：新增路徑轉折點（預設套用目前選擇的樓層與 floorZ）<br>
+      • <b>跨樓層搭 Lift</b>：可在下方「路徑點明細」把某一點的樓層改為其他樓層，並設定 <code>waitSec</code> 停留秒數<br>
       • <b>右鍵拖曳</b>：平移畫面 ｜ <b>滾輪</b>：縮放 ｜ <b>中鍵拖曳</b>：傾斜視角
     </div>
   </div>
 
-  <!-- 右側：獨立路徑編輯與 API 模擬控制台 -->
   <div id="studioPanel">
-    <h2>AutoXing Mock 路徑製作器 <span class="badge">獨立工具</span></h2>
+    <h2>AutoXing Mock 路徑製作器 <span class="badge">跨樓層版</span></h2>
 
-    <!-- 1. 目標模型選擇 -->
+    <!-- 1. 樓層模型與基準 Z 高度 -->
     <div class="card">
-      <div class="card-title">1. 選擇要編輯路徑的模型</div>
+      <div class="card-title">1. 樓層模型與基準高度 (floorZ)</div>
       <div class="grid-2">
         <div>
-          <label>選擇模型</label>
+          <label>目前編輯樓層</label>
           <select id="modelSelect"></select>
         </div>
         <div>
           <label>視角輔助</label>
           <button class="secondary" id="resetTopViewBtn" style="margin-top:0;">重置垂直俯視角</button>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top: 8px;">
+        <div>
+          <label>該樓層預設 floorZ (m)</label>
+          <input type="number" id="floorZInput" value="-1.2" step="0.1">
+        </div>
+        <div>
+          <label>樓層編號 (Floor)</label>
+          <input type="number" id="floorInput" value="11">
         </div>
       </div>
     </div>
@@ -118,10 +134,6 @@
       </div>
       <div class="grid-2" style="margin-top: 8px;">
         <div>
-          <label>樓層編號 (Floor)</label>
-          <input type="number" id="floorInput" value="2">
-        </div>
-        <div>
           <label>巡邏模式</label>
           <select id="loopSelect">
             <option value="loop">閉合循環巡邏 (Loop)</option>
@@ -129,13 +141,17 @@
             <option value="once">單次走到終點 (Once)</option>
           </select>
         </div>
+        <div>
+          <label>地圖原點旋轉角 (°)</label>
+          <input type="number" id="calRot" value="0" step="1">
+        </div>
       </div>
     </div>
 
-    <!-- 3. 座標系校準（若 AutoXing 原點與模型中心不同可微調） -->
+    <!-- 3. 座標系偏移校準 -->
     <div class="card">
       <div class="card-title">3. AutoXing 地圖原點偏移校準 (選填)</div>
-      <div class="grid-3">
+      <div class="grid-2">
         <div>
           <label>Offset X (m)</label>
           <input type="number" id="calX" value="0" step="0.1">
@@ -144,16 +160,15 @@
           <label>Offset Y (m)</label>
           <input type="number" id="calY" value="0" step="0.1">
         </div>
-        <div>
-          <label>旋轉角 (°)</label>
-          <input type="number" id="calRot" value="0" step="1">
-        </div>
       </div>
     </div>
 
-    <!-- 4. 路徑點控制與匯出 -->
+    <!-- 4. 路徑點明細（支援單點改樓層與 waitSec）與匯出 -->
     <div class="card">
-      <div class="card-title">4. 已錄製路徑點 (<span id="pointCount">0</span> 點)</div>
+      <div class="card-title">4. 路徑點明細 (<span id="pointCount">0</span> 點)</div>
+      <div class="wp-list" id="waypointListContainer">
+        <div style="font-size:11px; color:#777;">尚未建立路徑點...</div>
+      </div>
       <div class="btn-row" style="margin-top:0; margin-bottom:8px;">
         <button class="secondary" id="undoPointBtn">撤銷最後一點</button>
         <button class="danger" id="clearPointsBtn">清空全部路徑</button>
@@ -180,14 +195,21 @@
   <script>
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IkZqU3ltVnAtUXJJeHJiX20iLCJqdGkiOiJjNGIzMjQ1ZS0xM2EyLTQ2NWMtYWYwOS1mYWUxOTMyZjllNmMiLCJpZCI6NTUyNjg2LCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3OTUwODIzODd9.JEBZaZMgJZBqkYtDQ3qWukrTRelSvU5slfcznBTGd2Q';
 
-    // 填入你的模型清單（與主 Viewer 保持一致）
+    // 與 3d_display_walk.html 同步的樓層模型與預設 floorZ
     const MODELS_CONFIG = [
-      { id: 'model_corridor_A', name: '走廊區塊 A (主走廊)', assetId: 6179670 },
-      // { id: 'model_corridor_B', name: '走廊區塊 B (轉角)', assetId: 1234567 },
+      { id: 'model_13f', name: '13/f', floor: 13, assetId: 6184026, defaultFloorZ: -1.2 },
+      { id: 'model_12f', name: '12/f', floor: 12, assetId: 6183954, defaultFloorZ: -1.2 },
+      { id: 'model_11f', name: '11/f', floor: 11, assetId: 6179670, defaultFloorZ: -1.2 }
     ];
 
-    // 建立跨分頁即時通訊頻道，讓主 Viewer 可以直接接收此工具發出的模擬 API
+    const ROBOT_HEIGHT = 0.7;
     const mockChannel = new BroadcastChannel('autoxing_mock_telemetry');
+
+    function extractFloorNumber(floorInput) {
+      if (floorInput === undefined || floorInput === null) return null;
+      const match = String(floorInput).match(/-?\d+/);
+      return match ? parseInt(match[0], 10) : null;
+    }
 
     async function initStudio() {
       const viewer = new Cesium.Viewer('cesiumContainer', {
@@ -207,10 +229,16 @@
       scene.screenSpaceCameraController.enableCollisionDetection = false;
       scene.camera.frustum.near = 0.05;
 
-      // 載入所有模型並建立下拉選單
       const modelSelect = document.getElementById('modelSelect');
-      const loadedModels = {};
+      const floorInput = document.getElementById('floorInput');
+      const floorZInput = document.getElementById('floorZInput');
+
+      const loadedModels = {}; // key: model.id
+      const floorDataByNum = {}; // key: floorNum
       let currentModelId = MODELS_CONFIG[0].id;
+
+      // 儲存整條路線的轉折點（支援跨樓層）：[{ x, y, z, floor, waitSec, modelId }]
+      const routeWaypoints = [];
 
       for (const item of MODELS_CONFIG) {
         const opt = document.createElement('option');
@@ -228,26 +256,38 @@
           const enuMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(center);
           const invEnuMatrix = Cesium.Matrix4.inverse(enuMatrix, new Cesium.Matrix4());
 
-          loadedModels[item.id] = {
+          const mObj = {
             config: item,
             tileset,
             enuMatrix,
             invEnuMatrix,
-            waypoints: [] // 儲存該模型錄製的局部座標點 [{x, y, z, worldPos}]
+            floorZ: item.defaultFloorZ
           };
+          loadedModels[item.id] = mObj;
+          floorDataByNum[item.floor] = mObj;
         } catch (err) {
           console.error('模型載入失敗:', item.name, err);
         }
       }
 
-      // 飛向指定模型並切換為正上方俯視角（最適合畫路徑）
+      function getWorldPosFromLocal(floorNum, localX, localY, localZ) {
+        const mObj = floorDataByNum[floorNum] || loadedModels[currentModelId];
+        if (!mObj) return null;
+        const zVal = (localZ !== undefined && localZ !== null) ? localZ : mObj.floorZ;
+        const pt = new Cesium.Cartesian3(localX, localY, zVal + (ROBOT_HEIGHT / 2));
+        return Cesium.Matrix4.multiplyByPoint(mObj.enuMatrix, pt, new Cesium.Cartesian3());
+      }
+
       function focusModelTopView(modelId) {
         const m = loadedModels[modelId];
         if (!m) return;
-        // 隱藏其他模型避免干擾點擊
+        floorInput.value = m.config.floor;
+        floorZInput.value = m.floorZ;
+
         Object.keys(loadedModels).forEach(id => {
           loadedModels[id].tileset.show = (id === modelId);
         });
+
         viewer.camera.flyToBoundingSphere(m.tileset.boundingSphere, {
           duration: 0.6,
           offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-90), Math.max(m.tileset.boundingSphere.radius * 2.2, 20))
@@ -260,40 +300,54 @@
         currentModelId = e.target.value;
         focusModelTopView(currentModelId);
         renderRouteGraphics();
+        renderWaypointList();
         updateJsonOutput();
+      };
+
+      floorZInput.onchange = () => {
+        const val = parseFloat(floorZInput.value);
+        if (!Number.isNaN(val) && loadedModels[currentModelId]) {
+          loadedModels[currentModelId].floorZ = val;
+          renderRouteGraphics();
+          updateJsonOutput();
+        }
       };
 
       document.getElementById('resetTopViewBtn').onclick = () => focusModelTopView(currentModelId);
 
       // ==========================================
-      // 畫布點擊錄製路徑點邏輯
+      // 畫布點擊錄製路徑點與繪製預覽
       // ==========================================
       const pointEntities = [];
-      let polylineEntity = null;
+      const polylineEntities = [];
       let simRobotEntity = null;
 
       function renderRouteGraphics() {
-        // 清除舊圖形
         pointEntities.forEach(e => viewer.entities.remove(e));
         pointEntities.length = 0;
-        if (polylineEntity) viewer.entities.remove(polylineEntity);
+        polylineEntities.forEach(e => viewer.entities.remove(e));
+        polylineEntities.length = 0;
 
-        const m = loadedModels[currentModelId];
-        if (!m || m.waypoints.length === 0) return;
+        if (routeWaypoints.length === 0) return;
 
-        // 繪製每個轉折點與序號
-        m.waypoints.forEach((pt, idx) => {
+        const worldPts = routeWaypoints.map(wp => ({
+          wp,
+          pos: getWorldPosFromLocal(wp.floor, wp.x, wp.y, wp.z)
+        })).filter(item => item.pos !== null);
+
+        worldPts.forEach((item, idx) => {
+          const isLiftPt = idx > 0 && item.wp.floor !== worldPts[idx - 1].wp.floor;
           const ent = viewer.entities.add({
-            position: pt.worldPos,
+            position: item.pos,
             point: {
               pixelSize: 10,
-              color: idx === 0 ? Cesium.Color.LIME : Cesium.Color.YELLOW,
+              color: isLiftPt ? Cesium.Color.ORANGE : (idx === 0 ? Cesium.Color.LIME : Cesium.Color.YELLOW),
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 2
             },
             label: {
-              text: `#${idx + 1}`,
-              font: 'bold 12px sans-serif',
+              text: `#${idx + 1} (${item.wp.floor}F${item.wp.waitSec ? ` ${item.wp.waitSec}s` : ''})`,
+              font: 'bold 11px sans-serif',
               fillColor: Cesium.Color.WHITE,
               outlineColor: Cesium.Color.BLACK,
               outlineWidth: 2,
@@ -305,23 +359,82 @@
           pointEntities.push(ent);
         });
 
-        // 繪製連線
-        if (m.waypoints.length >= 2) {
-          const positions = m.waypoints.map(pt => pt.worldPos);
-          if (document.getElementById('loopSelect').value === 'loop') {
-            positions.push(m.waypoints[0].worldPos);
-          }
-          polylineEntity = viewer.entities.add({
+        for (let i = 0; i < worldPts.length - 1; i++) {
+          const a = worldPts[i];
+          const b = worldPts[i + 1];
+          const crossFloor = a.wp.floor !== b.wp.floor;
+          const line = viewer.entities.add({
             polyline: {
-              positions: positions,
+              positions: [a.pos, b.pos],
               width: 3,
-              material: Cesium.Color.CYAN
+              material: crossFloor
+                ? new Cesium.PolylineDashMaterialProperty({ color: Cesium.Color.ORANGE })
+                : Cesium.Color.CYAN
             }
           });
+          polylineEntities.push(line);
+        }
+
+        if (document.getElementById('loopSelect').value === 'loop' && worldPts.length >= 2) {
+          const first = worldPts[0];
+          const last = worldPts[worldPts.length - 1];
+          const crossFloor = first.wp.floor !== last.wp.floor;
+          polylineEntities.push(viewer.entities.add({
+            polyline: {
+              positions: [last.pos, first.pos],
+              width: 3,
+              material: crossFloor
+                ? new Cesium.PolylineDashMaterialProperty({ color: Cesium.Color.ORANGE })
+                : Cesium.Color.CYAN
+            }
+          }));
         }
       }
 
-      // 監聽左鍵單擊模型地板新增路徑點
+      function renderWaypointList() {
+        const container = document.getElementById('waypointListContainer');
+        if (routeWaypoints.length === 0) {
+          container.innerHTML = `<div style="font-size:11px; color:#777;">尚未建立路徑點...</div>`;
+          return;
+        }
+
+        container.innerHTML = '';
+        routeWaypoints.forEach((wp, idx) => {
+          const row = document.createElement('div');
+          row.className = 'wp-row';
+          row.innerHTML = `
+            <strong>#${idx + 1}</strong>
+            <span style="color:#ccc;">(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)})</span>
+            <select title="所屬樓層 (搭 Lift 可切換樓層)">
+              <option value="13" ${wp.floor === 13 ? 'selected' : ''}>13F</option>
+              <option value="12" ${wp.floor === 12 ? 'selected' : ''}>12F</option>
+              <option value="11" ${wp.floor === 11 ? 'selected' : ''}>11F</option>
+            </select>
+            <input type="number" min="0" step="0.5" value="${wp.waitSec || 0}" title="停留秒數 waitSec">
+          `;
+
+          const selEl = row.querySelector('select');
+          const waitEl = row.querySelector('input');
+
+          selEl.onchange = () => {
+            const newFloor = Number(selEl.value);
+            wp.floor = newFloor;
+            const targetFloorObj = floorDataByNum[newFloor];
+            if (targetFloorObj) wp.z = targetFloorObj.floorZ;
+            renderRouteGraphics();
+            updateJsonOutput();
+          };
+
+          waitEl.onchange = () => {
+            wp.waitSec = Number(waitEl.value) || 0;
+            renderRouteGraphics();
+            updateJsonOutput();
+          };
+
+          container.appendChild(row);
+        });
+      }
+
       const handler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
       handler.setInputAction((click) => {
         const m = loadedModels[currentModelId];
@@ -330,41 +443,42 @@
         const worldPos = scene.pickPosition(click.position);
         if (!Cesium.defined(worldPos)) return;
 
-        // 轉換為相對於該模型中心的 Local (X, Y, Z)
         const localPos = Cesium.Matrix4.multiplyByPoint(m.invEnuMatrix, worldPos, new Cesium.Cartesian3());
+        const activeFloor = Number(floorInput.value) || m.config.floor;
+        const activeFloorZ = parseFloat(floorZInput.value);
+        const zVal = Number.isNaN(activeFloorZ) ? m.floorZ : activeFloorZ;
 
-        m.waypoints.push({
+        routeWaypoints.push({
           x: Number(localPos.x.toFixed(3)),
           y: Number(localPos.y.toFixed(3)),
-          z: Number(localPos.z.toFixed(3)),
-          worldPos: worldPos.clone()
+          z: Number(zVal.toFixed(3)),
+          floor: activeFloor,
+          waitSec: 0
         });
 
         renderRouteGraphics();
+        renderWaypointList();
         updateJsonOutput();
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-      // 撤銷與清空按鈕
       document.getElementById('undoPointBtn').onclick = () => {
-        const m = loadedModels[currentModelId];
-        if (m && m.waypoints.length > 0) {
-          m.waypoints.pop();
+        if (routeWaypoints.length > 0) {
+          routeWaypoints.pop();
           renderRouteGraphics();
+          renderWaypointList();
           updateJsonOutput();
         }
       };
 
       document.getElementById('clearPointsBtn').onclick = () => {
-        const m = loadedModels[currentModelId];
-        if (m) {
-          m.waypoints = [];
-          renderRouteGraphics();
-          updateJsonOutput();
-        }
+        routeWaypoints.length = 0;
+        renderRouteGraphics();
+        renderWaypointList();
+        updateJsonOutput();
       };
 
       // ==========================================
-      // 坐標轉換與 JSON 匯出
+      // 坐標校準與 JSON 匯出
       // ==========================================
       function toAutoXingLocal(pt) {
         const offX = parseFloat(document.getElementById('calX').value) || 0;
@@ -383,27 +497,34 @@
       }
 
       function updateJsonOutput() {
-        const m = loadedModels[currentModelId];
-        const countEl = document.getElementById('pointCount');
-        const outEl = document.getElementById('jsonOutput');
-
-        if (!m) return;
-        countEl.textContent = m.waypoints.length;
+        document.getElementById('pointCount').textContent = routeWaypoints.length;
+        const baseFloor = Number(floorInput.value) || 11;
+        const baseFloorZ = parseFloat(floorZInput.value);
 
         const exportData = {
           modelId: currentModelId,
           robotId: document.getElementById('robotIdInput').value,
-          floor: Number(document.getElementById('floorInput').value),
+          floor: baseFloor,
+          floorZ: Number.isNaN(baseFloorZ) ? -1.2 : baseFloorZ,
           speed: Number(document.getElementById('speedInput').value),
           loopMode: document.getElementById('loopSelect').value,
-          // 匯出轉換後的 AutoXing 坐標點
-          waypoints: m.waypoints.map(pt => toAutoXingLocal(pt))
+          waypoints: routeWaypoints.map(wp => {
+            const axPos = toAutoXingLocal(wp);
+            const item = {
+              x: axPos.x,
+              y: axPos.y,
+              z: wp.z,
+              floor: wp.floor
+            };
+            if (wp.waitSec && wp.waitSec > 0) item.waitSec = wp.waitSec;
+            return item;
+          })
         };
 
-        outEl.value = JSON.stringify(exportData, null, 2);
+        document.getElementById('jsonOutput').value = JSON.stringify(exportData, null, 2);
       }
 
-      ['robotIdInput', 'speedInput', 'floorInput', 'loopSelect', 'calX', 'calY', 'calRot'].forEach(id => {
+      ['robotIdInput', 'speedInput', 'floorInput', 'floorZInput', 'loopSelect', 'calX', 'calY', 'calRot'].forEach(id => {
         document.getElementById(id).addEventListener('change', () => {
           renderRouteGraphics();
           updateJsonOutput();
@@ -428,13 +549,12 @@
       };
 
       // ==========================================
-      // Mock AutoXing API 即時模擬推播引擎
+      // Mock AutoXing API 即時模擬推播引擎（支援跨樓層搭 Lift）
       // ==========================================
       let simTimer = null;
 
       document.getElementById('startSimBtn').onclick = () => {
-        const m = loadedModels[currentModelId];
-        if (!m || m.waypoints.length < 2) {
+        if (routeWaypoints.length < 2) {
           alert('請先在左側模型地板點擊至少 2 個路徑點！');
           return;
         }
@@ -442,76 +562,86 @@
         document.getElementById('startSimBtn').disabled = true;
         document.getElementById('stopSimBtn').disabled = false;
 
-        // 建立預覽用的藍色移動圓點
+        let pts = routeWaypoints.map(wp => ({
+          ...wp,
+          worldPos: getWorldPosFromLocal(wp.floor, wp.x, wp.y, wp.z)
+        })).filter(p => p.worldPos !== null);
+
+        const loopMode = document.getElementById('loopSelect').value;
+        if (loopMode === 'pingpong' && pts.length > 2) {
+          pts = pts.concat(pts.slice(1, -1).reverse());
+        }
+
         if (simRobotEntity) viewer.entities.remove(simRobotEntity);
         simRobotEntity = viewer.entities.add({
-          position: m.waypoints[0].worldPos,
+          position: pts[0].worldPos,
           cylinder: {
-            length: 0.6, topRadius: 0.3, bottomRadius: 0.3,
-            material: Cesium.Color.DEEPSKYBLUE.withAlpha(0.9),
+            length: ROBOT_HEIGHT, topRadius: 0.32, bottomRadius: 0.35,
+            material: Cesium.Color.DEEPSKYBLUE.withAlpha(0.95),
             outline: true, outlineColor: Cesium.Color.WHITE
           }
         });
 
-        // 依據選擇的巡邏模式組裝實際運行序列
-        let routePts = [...m.waypoints];
-        const loopMode = document.getElementById('loopSelect').value;
-        if (loopMode === 'pingpong' && routePts.length > 2) {
-          const reversed = routePts.slice(1, -1).reverse();
-          routePts = routePts.concat(reversed);
-        }
-
         let segIdx = 0;
         let segDist = 0;
+        let waitRemaining = 0;
         let battery = 96.0;
         const speed = parseFloat(document.getElementById('speedInput').value) || 0.8;
         const hz = parseInt(document.getElementById('hzInput').value) || 10;
         const dt = 1 / hz;
 
         simTimer = setInterval(() => {
-          if (loopMode === 'once' && segIdx >= routePts.length - 1) {
-            return; // 單次模式已抵達終點
-          }
+          if (loopMode === 'once' && segIdx >= pts.length - 1) return;
 
-          const p1 = routePts[segIdx];
-          const nextIdx = (segIdx + 1) % routePts.length;
-          const p2 = routePts[nextIdx];
-
-          const dx = p2.x - p1.x;
-          const dy = p2.y - p1.y;
-          const dz = p2.z - p1.z;
-          const len = Math.hypot(dx, dy);
-
-          if (len < 0.001) {
-            segIdx = nextIdx;
+          if (waitRemaining > 0) {
+            waitRemaining = Math.max(0, waitRemaining - dt);
             return;
           }
 
-          segDist += speed * dt;
-          if (segDist >= len) {
-            segDist -= len;
+          const p1 = pts[segIdx];
+          const nextIdx = (segIdx + 1) % pts.length;
+          const p2 = pts[nextIdx];
+
+          const isCrossFloor = p1.floor !== p2.floor;
+          const dist = isCrossFloor
+            ? Cesium.Cartesian3.distance(p1.worldPos, p2.worldPos)
+            : Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+          if (dist < 0.001) {
             segIdx = nextIdx;
+            waitRemaining = p2.waitSec || 0;
             return;
           }
 
-          const ratio = segDist / len;
-          const curLocal = {
-            x: p1.x + dx * ratio,
-            y: p1.y + dy * ratio,
-            z: p1.z + dz * ratio
-          };
+          const moveSpeed = isCrossFloor ? Math.min(speed, 1.5) : speed;
+          segDist += moveSpeed * dt;
+          if (segDist >= dist) {
+            segDist -= dist;
+            segIdx = nextIdx;
+            waitRemaining = p2.waitSec || 0;
+            return;
+          }
 
-          // 更新本機預覽畫面中的圓點
-          simRobotEntity.position = Cesium.Matrix4.multiplyByPoint(
-            m.enuMatrix,
-            new Cesium.Cartesian3(curLocal.x, curLocal.y, curLocal.z + 0.3),
-            new Cesium.Cartesian3()
-          );
+          const ratio = segDist / dist;
+          const curX = p1.x + (p2.x - p1.x) * ratio;
+          const curY = p1.y + (p2.y - p1.y) * ratio;
+          const curZ = p1.z + (p2.z - p1.z) * ratio;
 
-          // 換算為 AutoXing 標準 API 回傳格式
-          const axPos = toAutoXingLocal(curLocal);
+          let worldPos;
+          let activeFloor = p1.floor;
+
+          if (isCrossFloor) {
+            worldPos = Cesium.Cartesian3.lerp(p1.worldPos, p2.worldPos, ratio, new Cesium.Cartesian3());
+            activeFloor = ratio >= 0.5 ? p2.floor : p1.floor;
+          } else {
+            worldPos = getWorldPosFromLocal(p1.floor, curX, curY, curZ);
+          }
+
+          if (worldPos) simRobotEntity.position = worldPos;
+
+          const axPos = toAutoXingLocal({ x: curX, y: curY });
           const rotRad = Cesium.Math.toRadians(parseFloat(document.getElementById('calRot').value) || 0);
-          const axYawRad = Math.atan2(dy, dx) - rotRad;
+          const axYawRad = Math.atan2(p2.y - p1.y, p2.x - p1.x) - rotRad;
           battery = Math.max(10, battery - 0.001);
 
           const axPayload = {
@@ -519,21 +649,27 @@
             modelId: currentModelId,
             timestamp: Date.now(),
             battery: Math.round(battery),
-            moveState: 'moving',
-            floor: Number(document.getElementById('floorInput').value),
+            moveState: isCrossFloor ? 'lift' : 'moving',
+            floor: activeFloor,
+            isLiftTransition: isCrossFloor,
+            overrideWorldPos: isCrossFloor ? worldPos : null,
             pose: {
               x: axPos.x,
               y: axPos.y,
+              z: Number(curZ.toFixed(3)),
               yaw: Number(axYawRad.toFixed(4))
             }
           };
 
-          // 1. 顯示在右側即時預覽框
-          document.getElementById('livePayloadBox').textContent = JSON.stringify(axPayload, null, 2);
+          document.getElementById('livePayloadBox').textContent = JSON.stringify({
+            robotId: axPayload.robotId,
+            floor: axPayload.floor,
+            moveState: axPayload.moveState,
+            battery: axPayload.battery,
+            pose: axPayload.pose
+          }, null, 2);
 
-          // 2. 透過 BroadcastChannel 廣播給同瀏覽器的主 Viewer 分頁
           mockChannel.postMessage(axPayload);
-
         }, dt * 1000);
       };
 
