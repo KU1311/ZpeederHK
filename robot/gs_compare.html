@@ -150,7 +150,6 @@
     dirLight.position.set(10, 20, 12);
     scene.add(dirLight);
 
-    // Fallback procedural indoor corridor splat-like point/ellipsoid cloud when no .ply/.splat is loaded
     const demoGroup = new THREE.Group();
     scene.add(demoGroup);
 
@@ -166,7 +165,6 @@
         grid.position.set(0, f.yBase, 0);
         demoGroup.add(grid);
 
-        // Corridor walls hint
         const wallGeo = new THREE.BoxGeometry(16, 2.4, 0.12);
         const wallMat = new THREE.MeshStandardMaterial({
           color: 0x8b949e,
@@ -178,7 +176,6 @@
         demoGroup.add(backWall);
       });
 
-      // Lift shaft vertical guide
       const liftShaftGeo = new THREE.CylinderGeometry(0.6, 0.6, 3.5, 16, 1, true);
       const liftShaftMat = new THREE.MeshBasicMaterial({
         color: 0xffa657,
@@ -193,7 +190,6 @@
 
     buildDemoCorridor();
 
-    // Robot marker + path line (11F corridor -> Lift at (3,0) -> 12F corridor)
     const robotMesh = new THREE.Mesh(
       new THREE.CylinderGeometry(0.32, 0.35, 0.7, 20),
       new THREE.MeshStandardMaterial({ color: 0x00e5ff })
@@ -212,8 +208,16 @@
     );
     scene.add(pathLine);
 
+    function detectFormat(nameOrUrl, GaussianSplats3D) {
+      const lower = nameOrUrl.toLowerCase().split('?')[0];
+      if (lower.endsWith('.splat')) return GaussianSplats3D.SceneFormat.Splat;
+      if (lower.endsWith('.ksplat')) return GaussianSplats3D.SceneFormat.KSplat;
+      if (lower.endsWith('.ply')) return GaussianSplats3D.SceneFormat.Ply;
+      return undefined;
+    }
+
     let gsViewer = null;
-    async function loadExternalSplat(source, isBuffer = false) {
+    async function loadExternalSplat(source, format = undefined) {
       const statusEl = document.getElementById('statusText');
       try {
         const GaussianSplats3D = await import('@mkkellogg/gaussian-splats-3d');
@@ -233,11 +237,10 @@
           useBuiltInControls: false
         });
 
-        if (isBuffer) {
-          await gsViewer.addSplatSceneFromBuffer(source, { splatAlphaRemovalThreshold: 5 });
-        } else {
-          await gsViewer.addSplatScene(source, { splatAlphaRemovalThreshold: 5 });
-        }
+        await gsViewer.addSplatScene(source, {
+          splatAlphaRemovalThreshold: 5,
+          ...(format ? { format } : {})
+        });
         statusEl.textContent = 'Mode: External Gaussian Splat Loaded';
       } catch (err) {
         console.error(err);
@@ -249,14 +252,17 @@
     document.getElementById('splatFileInput').addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      const buf = new Uint8Array(await file.arrayBuffer());
-      await loadExternalSplat(buf, true);
+      const GaussianSplats3D = await import('@mkkellogg/gaussian-splats-3d');
+      const blobUrl = URL.createObjectURL(file);
+      await loadExternalSplat(blobUrl, detectFormat(file.name, GaussianSplats3D));
+      URL.revokeObjectURL(blobUrl);
     });
 
     document.getElementById('loadUrlBtn').addEventListener('click', async () => {
       const url = document.getElementById('splatUrlInput').value.trim();
       if (!url) return;
-      await loadExternalSplat(url, false);
+      const GaussianSplats3D = await import('@mkkellogg/gaussian-splats-3d');
+      await loadExternalSplat(url, detectFormat(url, GaussianSplats3D));
     });
 
     document.getElementById('demoCorridorBtn').addEventListener('click', async () => {
