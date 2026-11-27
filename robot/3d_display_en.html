@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Cesium LiDAR Indoor Corridor (Cross-Floor Lift & Adapter)</title>
+  <title>Cesium LiDAR Indoor Corridor (Cross-Floor Lift, Adapter &amp; Vision Follow)</title>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
   <style>
@@ -13,7 +13,7 @@
       position: absolute; top: 12px; left: 12px; z-index: 999;
       background: rgba(25, 25, 25, 0.92); color: white;
       padding: 14px 16px; border-radius: 8px; font-family: sans-serif; font-size: 13px;
-      width: 330px; box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+      width: 345px; box-shadow: 0 4px 14px rgba(0,0,0,0.45);
       max-height: 92vh; overflow-y: auto;
     }
     .mode-switch {
@@ -42,15 +42,17 @@
     .model-item {
       display: flex; align-items: center; justify-content: space-between;
       margin-bottom: 6px; background: rgba(255,255,255,0.06);
-      padding: 6px 8px; border-radius: 4px;
+      padding: 6px 8px; border-radius: 4px; gap: 6px;
     }
     .model-item label {
       display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;
     }
     .fly-mini-btn {
-      padding: 3px 8px; font-size: 11px; background: #2b88d8; border: none; color: white; border-radius: 3px; cursor: pointer; margin-left: 4px;
+      padding: 3px 7px; font-size: 11px; background: #2b88d8; border: none; color: white; border-radius: 3px; cursor: pointer; margin-left: 3px;
     }
     .fly-mini-btn.follow { background: #107c10; }
+    .fly-mini-btn.vision { background: #8764b8; }
+    .fly-mini-btn.vision.active { background: #d83b01; }
     .coord-text { font-family: monospace; font-size: 11px; color: #4fc3f7; display: block; }
     .status-note { font-size: 11px; color: #aaa; margin-bottom: 6px; word-break: break-all; }
   </style>
@@ -68,14 +70,15 @@
 
     <div id="controlGuide" class="guide-box">
       <strong>Orbit Inspection Mode:</strong><br>
-- <b>Double-click Left Mouse</b>: Set clicked point as orbit pivot &amp; zoom in<br>
-- <b>Left Drag</b>: Orbit 360° around pivot ｜ <b>Right Drag</b>: Pan ｜ <b>Scroll</b>: Zoom
+      • <b>Double-click Left Mouse</b>: Set clicked point as orbit pivot &amp; zoom in<br>
+      • <b>Left Drag</b>: Orbit 360° around pivot ｜ <b>Right Drag</b>: Pan ｜ <b>Scroll</b>: Zoom
     </div>
 
     <div class="btn-group">
       <button id="topViewBtn" class="action-btn">Top View</button>
       <button id="eyeLevelBtn" class="action-btn">Eye Level (1.6m)</button>
       <button id="toggleBuildingsBtn" class="action-btn">Building Opacity</button>
+      <button id="stopVisionBtn" class="action-btn" style="display:none;">Exit Vision Follow</button>
     </div>
 
     <!-- Floor Layer Controls -->
@@ -130,6 +133,7 @@
     // =========================================================================
 
     const ROBOT_HEIGHT = 0.7;
+    const VISION_EYE_HEIGHT = 1.15;
 
     function extractFloorNumber(floorInput) {
       if (floorInput === undefined || floorInput === null) return null;
@@ -137,9 +141,6 @@
       return match ? parseInt(match[0], 10) : null;
     }
 
-    /**
-     * Normalize mock packets or future AutoXing SDK callbacks into viewer format
-     */
     function adaptAutoXingPayload(raw) {
       if (!raw) return null;
 
@@ -196,6 +197,57 @@
       const activeSimulators = [];
       const loadedRouteKeys = new Set();
       let activeTileset = null;
+      let visionFollowRobotId = null;
+
+      function updateVisionButtonsUI() {
+        const stopBtn = document.getElementById('stopVisionBtn');
+        stopBtn.style.display = visionFollowRobotId ? 'inline-block' : 'none';
+        Object.keys(robots).forEach(rid => {
+          const btn = document.getElementById(`vision-${rid}`);
+          if (btn) {
+            const active = (visionFollowRobotId === rid);
+            btn.classList.toggle('active', active);
+            btn.textContent = active ? 'Vision On' : 'Vision';
+          }
+        });
+      }
+
+      function setVisionFollow(robotId) {
+        visionFollowRobotId = robotId || null;
+        if (visionFollowRobotId) {
+          setNavigationMode(false);
+          viewer.trackedEntity = undefined;
+          const r = robots[visionFollowRobotId];
+          if (r && floorMap[r.floorNum] && !floorMap[r.floorNum].tileset.show && !r.isLiftTransition) {
+            floorMap[r.floorNum].tileset.show = true;
+            floorMap[r.floorNum].checkboxEl.checked = true;
+            syncRobotsVisibilityForFloor(r.floorNum, true);
+          }
+        }
+        updateVisionButtonsUI();
+      }
+
+      document.getElementById('stopVisionBtn').onclick = () => setVisionFollow(null);
+
+      function applyRobotVisionCamera(robotObj) {
+        if (!robotObj || !robotObj.worldPos) return;
+        const enu = Cesium.Transforms.eastNorthUpToFixedFrame(robotObj.worldPos);
+        const eyeLocal = new Cesium.Cartesian3(0, 0, VISION_EYE_HEIGHT);
+        const eyeWorld = Cesium.Matrix4.multiplyByPoint(enu, eyeLocal, new Cesium.Cartesian3());
+
+        // Map local ENU yaw (0 = +X East, pi/2 = +Y North) to Cesium camera heading (0 = North, pi/2 = East)
+        const cesiumHeading = Cesium.Math.PI_OVER_TWO - (robotObj.yawRad || 0);
+        const pitch = robotObj.isLiftTransition ? Cesium.Math.toRadians(-12) : Cesium.Math.toRadians(-4);
+
+        camera.setView({
+          destination: eyeWorld,
+          orientation: {
+            heading: cesiumHeading,
+            pitch: pitch,
+            roll: 0.0
+          }
+        });
+      }
 
       function syncRobotsVisibilityForFloor(floorNum, isVisible) {
         Object.values(robots).forEach(r => {
@@ -241,6 +293,7 @@
           };
 
           row.querySelector('button').onclick = () => {
+            setVisionFollow(null);
             activeTileset = tileset;
             viewer.trackedEntity = undefined;
             viewer.camera.flyToBoundingSphere(tileset.boundingSphere, {
@@ -316,7 +369,8 @@
 
         const x = axData.pose.x;
         const y = axData.pose.y;
-        const yawDeg = Cesium.Math.toDegrees(axData.pose.yaw || 0);
+        const yawRad = axData.pose.yaw || 0;
+        const yawDeg = Cesium.Math.toDegrees(yawRad);
         const explicitZ = (axData.pose.z !== undefined && axData.pose.z !== null)
           ? axData.pose.z
           : floorData.floorZ;
@@ -377,11 +431,13 @@
             <div>
               <button class="fly-mini-btn" id="fly-${id}">Locate</button>
               <button class="fly-mini-btn follow" id="follow-${id}">Follow</button>
+              <button class="fly-mini-btn vision" id="vision-${id}">Vision</button>
             </div>
           `;
           robotListContainer.appendChild(row);
 
           document.getElementById(`fly-${id}`).onclick = () => {
+            setVisionFollow(null);
             if (!floorData.tileset.show) {
               floorData.tileset.show = true;
               floorData.checkboxEl.checked = true;
@@ -392,11 +448,28 @@
           };
 
           document.getElementById(`follow-${id}`).onclick = () => {
+            setVisionFollow(null);
             setNavigationMode(false);
             viewer.trackedEntity = entity;
           };
 
-          robots[id] = { entity, trailPositions, floorNum, isLiftTransition: axData.isLiftTransition };
+          document.getElementById(`vision-${id}`).onclick = () => {
+            if (visionFollowRobotId === id) {
+              setVisionFollow(null);
+            } else {
+              setVisionFollow(id);
+            }
+          };
+
+          robots[id] = {
+            entity,
+            trailPositions,
+            floorNum,
+            isLiftTransition: axData.isLiftTransition,
+            worldPos,
+            yawRad
+          };
+          updateVisionButtonsUI();
         } else {
           const r = robots[id];
           if (r.floorNum !== floorNum) {
@@ -404,6 +477,8 @@
             r.floorNum = floorNum;
           }
           r.isLiftTransition = axData.isLiftTransition;
+          r.worldPos = worldPos;
+          r.yawRad = yawRad;
           r.entity.show = isFloorVisible;
           r.entity.position = worldPos;
           r.entity.orientation = orientation;
@@ -416,6 +491,10 @@
           const flrEl = document.getElementById(`flr-${id}`);
           if (coordEl) coordEl.innerText = `X:${x.toFixed(2)} Y:${y.toFixed(2)} Z:${explicitZ.toFixed(2)}`;
           if (flrEl) flrEl.innerText = `[${floorLabelText}]`;
+        }
+
+        if (visionFollowRobotId === id) {
+          applyRobotVisionCamera(robots[id]);
         }
       };
 
@@ -445,7 +524,6 @@
 
         if (resolvedPts.length < 2) return;
 
-        // Draw dashed route polylines segmented by floor
         let currentSegmentGroup = [];
         const flushSegmentGroup = () => {
           if (currentSegmentGroup.length >= 2) {
@@ -527,7 +605,6 @@
       await loadHardcodedRoutes();
       document.getElementById('reloadRoutesBtn').onclick = () => loadHardcodedRoutes();
 
-      // Simulation loop supporting cross-floor lift transitions and waitSec pauses
       setInterval(() => {
         const dt = 0.1;
         for (const sim of activeSimulators) {
@@ -612,6 +689,7 @@
 
       handler.setInputAction((movement) => {
         if (isFpvMode) return;
+        setVisionFollow(null);
         viewer.trackedEntity = undefined;
         const pickedPosition = scene.pickPosition(movement.position);
         if (Cesium.defined(pickedPosition)) {
@@ -633,7 +711,10 @@
 
       function setNavigationMode(fpv) {
         isFpvMode = fpv;
-        if (fpv) viewer.trackedEntity = undefined;
+        if (fpv) {
+          setVisionFollow(null);
+          viewer.trackedEntity = undefined;
+        }
         document.getElementById('orbitModeBtn').classList.toggle('active', !fpv);
         document.getElementById('fpvModeBtn').classList.toggle('active', fpv);
 
@@ -648,15 +729,15 @@
           camera.setView({ orientation: { heading: camera.heading, pitch: 0.0, roll: 0.0 } });
           document.getElementById('controlGuide').innerHTML = `
             <strong>First-Person Mode (Level Locked):</strong><br>
-- <b>W / S</b>: Forward / Backward ｜ <b>A / D</b>: Left / Right<br>
-- <b>Q / E</b>: Move Down / Up<br>
-- <b>Left Drag</b>: Look around in place
+            • <b>W / S</b>: Forward / Backward ｜ <b>A / D</b>: Left / Right<br>
+            • <b>Q / E</b>: Move Down / Up<br>
+            • <b>Left Drag</b>: Look around in place
           `;
         } else {
           document.getElementById('controlGuide').innerHTML = `
             <strong>Orbit Inspection Mode:</strong><br>
-- <b>Double-click Left Mouse</b>: Set clicked point as orbit pivot &amp; zoom in<br>
-- <b>Left Drag</b>: Orbit 360° around pivot ｜ <b>Right Drag</b>: Pan ｜ <b>Scroll</b>: Zoom
+            • <b>Double-click Left Mouse</b>: Set clicked point as orbit pivot &amp; zoom in<br>
+            • <b>Left Drag</b>: Orbit 360° around pivot ｜ <b>Right Drag</b>: Pan ｜ <b>Scroll</b>: Zoom
           `;
         }
       }
@@ -691,6 +772,10 @@
       });
 
       viewer.clock.onTick.addEventListener(() => {
+        if (visionFollowRobotId && robots[visionFollowRobotId]) {
+          applyRobotVisionCamera(robots[visionFollowRobotId]);
+          return;
+        }
         if (!isFpvMode) return;
         if (flags.look) {
           const width = scene.canvas.clientWidth;
@@ -720,6 +805,7 @@
       });
 
       document.getElementById('topViewBtn').onclick = () => {
+        setVisionFollow(null);
         setNavigationMode(false);
         viewer.trackedEntity = undefined;
         if (!activeTileset) return;
@@ -729,6 +815,7 @@
       };
 
       document.getElementById('eyeLevelBtn').onclick = () => {
+        setVisionFollow(null);
         if (!activeTileset) return;
         viewer.trackedEntity = undefined;
         camera.flyToBoundingSphere(activeTileset.boundingSphere, {
