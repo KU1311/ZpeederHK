@@ -234,7 +234,8 @@
           camera: camera,
           controls: controls,
           selfDrivenMode: false,
-          useBuiltInControls: false
+          useBuiltInControls: false,
+          sharedMemoryForWorkers: false
         });
 
         await gsViewer.addSplatScene(source, {
